@@ -7,8 +7,10 @@ import { HuntTargetOverlay } from './HuntPrompt';
 import { useGameStore } from '@/store/gameStore';
 import type { HouseId, Readiness, Unit } from '@shared/types';
 
-const BOARD_W = 1408;
-const BOARD_H = 1056;
+// Match base_art.png natural dimensions (recent_map.png — 1554x1168, includes
+// reserve-track region at the bottom).
+const BOARD_W = 1554;
+const BOARD_H = 1168;
 
 const REGION_FILLS: Record<string, string> = {
   'Mountains': 'rgba(120,110,100,0.10)',
@@ -178,21 +180,9 @@ export function HexMap() {
         className="absolute inset-0 w-full h-full"
         style={{ pointerEvents: 'auto' }}
       >
-        {/* Region tints */}
-        <g opacity="0.6">
-          {HEXES.map((h) => {
-            const p = positions[h.id];
-            const rr = CALIBRATION.r * CALIBRATION.rs[h.r] * 0.97;
-            return (
-              <polygon
-                key={`tint-${h.id}`}
-                points={hexPolygonPoints(p.x, p.y, rr)}
-                fill={REGION_FILLS[h.region] || 'transparent'}
-                stroke="none"
-              />
-            );
-          })}
-        </g>
+        {/* Region tints — disabled because the recent_map.png has region
+            shading and labels baked in. Keeping the data here in case we
+            swap back to the plain Nano-Banana art later. */}
 
         {/* Deploy target highlights */}
         {deployMode && (
@@ -290,29 +280,7 @@ export function HexMap() {
           })}
         </g>
 
-        {/* Hex numbers */}
-        <g pointerEvents="none">
-          {HEXES.map((h) => {
-            const p = positions[h.id];
-            const rr = CALIBRATION.r * CALIBRATION.rs[h.r];
-            return (
-              <text
-                key={`num-${h.id}`}
-                x={p.x + rr * -0.52}
-                y={p.y + rr * -0.4}
-                fontFamily="Cinzel, serif"
-                fontSize={rr * 0.26}
-                fontWeight={900}
-                fill="#fff"
-                stroke="#000"
-                strokeWidth={0.5}
-                textAnchor="start"
-              >
-                {h.id}
-              </text>
-            );
-          })}
-        </g>
+        {/* Hex numbers — disabled (recent_map.png has them baked in). */}
 
         {/* Removal markers */}
         <g pointerEvents="none">
@@ -348,9 +316,10 @@ export function HexMap() {
           })}
         </g>
 
-        {/* Castle markers — color = playing-house home; otherwise neutral.
-            Home castles for non-playing houses (e.g. Apollo in a Mars-vs-Diana game)
-            render as neutral and are mechanically neutral (have garrisons). */}
+        {/* Castle ownership markers — small colored dot in the corner of castle
+            hexes to show who controls them. The board art has the castle icons
+            baked in (gray crenellated walls), so we use a small dot to convey
+            ownership without obscuring the art. */}
         <g pointerEvents="none">
           {HEXES.filter((h) => h.special?.kind === 'Castle').map((h) => {
             const p = positions[h.id];
@@ -362,20 +331,15 @@ export function HexMap() {
             const fill = isPlayingHome ? HOUSES[castle!.house!].color : '#a89a73';
             return (
               <g key={`castle-${h.id}`}>
-                <circle cx={p.x} cy={p.y} r={rr * 0.32} fill={fill} stroke="#1a1a1a" strokeWidth={2} />
-                <text
-                  x={p.x}
-                  y={p.y + rr * 0.55}
-                  fontFamily="Cinzel, serif"
-                  fontSize={rr * 0.22}
-                  fontWeight={700}
-                  fill="#fff"
-                  stroke="#000"
-                  strokeWidth={0.5}
-                  textAnchor="middle"
-                >
-                  {castle?.name}
-                </text>
+                {/* Small ownership dot in the upper-right corner of the hex */}
+                <circle
+                  cx={p.x + rr * 0.45}
+                  cy={p.y - rr * 0.45}
+                  r={rr * 0.14}
+                  fill={fill}
+                  stroke="#1a1a1a"
+                  strokeWidth={1.5}
+                />
               </g>
             );
           })}
