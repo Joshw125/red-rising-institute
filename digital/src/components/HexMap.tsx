@@ -12,6 +12,40 @@ import type { HouseId, Readiness, Unit } from '@shared/types';
 const BOARD_W = 1554;
 const BOARD_H = 1168;
 
+// Reserve track box geometry — derived from the same calibration values used by
+// composite_board.html to draw the boxes on the image. The board art has 4
+// numbered spots (0/WITHDRAWN, 1/3-hex, 2/6-hex, 3/9-hex). Engine spaces 1-3
+// correspond to spots 1-3; spot 0 is unused (we withdraw straight to space 1).
+//
+// Math (mirrors composite_board.html):
+//   trackY = svgH - r * 2.5
+//   spotSize = r * 1.05 * rsW = 59.5 * 1.05 * 1.6 = 99.96
+//   spotGap = r * 0.35 * rsW = 33.32
+//   totalTrackW = 4 * (spotSize * 2.6) + 3 * spotGap
+//   trackOX = svgW/2 - totalTrackW/2
+//   spotY = trackY + titleH (= r * 0.35)
+//   spotH = spotSize * 1.5 * rsH = 99.96 * 1.5 * 0.7 = 104.96
+const RT_BOX = (() => {
+  const r = 59.5;
+  const rsW = 1.6;
+  const rsH = 0.7;
+  const trackY = BOARD_H - r * 2.5;
+  const spotSize = r * 1.05 * rsW;
+  const spotGap = r * 0.35 * rsW;
+  const titleH = r * 0.35;
+  const spotY = trackY + titleH;
+  const spotH = spotSize * 1.5 * rsH;
+  const spotW = spotSize * 2.6;
+  const totalTrackW = 4 * spotW + 3 * spotGap;
+  const trackOX = BOARD_W / 2 - totalTrackW / 2;
+  return {
+    spotY,
+    spotW,
+    spotH,
+    sx: (i: number) => trackOX + i * (spotW + spotGap),
+  };
+})();
+
 const REGION_FILLS: Record<string, string> = {
   'Mountains': 'rgba(120,110,100,0.10)',
   'North Woods': 'rgba(40,90,50,0.12)',
@@ -486,6 +520,59 @@ export function HexMap() {
                     textAnchor="middle"
                   >
                     {pip.count}
+                  </text>
+                </g>
+              );
+            });
+          })}
+        </g>
+
+        {/* Reserve Track — render unit groups inside the baked-in track boxes
+            at the bottom of the board art. Each ReserveGroup gets a colored
+            pip with its unit count and origin hex marker. Multiple groups at
+            the same Space stack horizontally inside the box. */}
+        <g pointerEvents="none">
+          {[1, 2, 3].map((space) => {
+            const groupsAtSpace = Object.values(reserveGroups).filter((g) => g.space === space);
+            if (groupsAtSpace.length === 0) return null;
+            const sx = RT_BOX.sx(space); // box index 1, 2, or 3
+            const boxCenterY = RT_BOX.spotY + RT_BOX.spotH / 2;
+            const slotW = RT_BOX.spotW / Math.max(groupsAtSpace.length, 1);
+            return groupsAtSpace.map((g, i) => {
+              const cx = sx + slotW * (i + 0.5);
+              const cy = boxCenterY;
+              const houseColor = HOUSES[g.house].color;
+              return (
+                <g key={`rtpip-${g.id}`}>
+                  <circle
+                    cx={cx}
+                    cy={cy - 8}
+                    r={26}
+                    fill={houseColor}
+                    stroke="#fff"
+                    strokeWidth={2}
+                  />
+                  <text
+                    x={cx}
+                    y={cy - 2}
+                    fontFamily="Cinzel, serif"
+                    fontSize={28}
+                    fontWeight={900}
+                    fill="#fff"
+                    textAnchor="middle"
+                  >
+                    {g.unitIds.length}
+                  </text>
+                  <text
+                    x={cx}
+                    y={cy + 32}
+                    fontFamily="Cinzel, serif"
+                    fontSize={14}
+                    fontWeight={700}
+                    fill="#1a1a1a"
+                    textAnchor="middle"
+                  >
+                    @{g.removalHexId}
                   </text>
                 </g>
               );
