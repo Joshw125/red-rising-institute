@@ -1,0 +1,862 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Red Rising: The Institute — Game Board</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&family=Cinzel+Decorative:wght@700;900&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #2a2a2a;
+    font-family: 'Cinzel', Georgia, serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 10px;
+    color: #eee;
+  }
+  h1 { font-family: 'Cinzel Decorative', serif; font-size: 20px; margin: 5px 0; letter-spacing: 3px; color: #d4c9a8; }
+
+  #board-container {
+    position: relative;
+    display: inline-block;
+    margin: 10px 0;
+    overflow: hidden;
+    border: 2px solid #555;
+  }
+  #base-art {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+  #overlay-svg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+  }
+  #overlay-svg.interactive { pointer-events: auto; }
+
+  /* Controls */
+  .controls {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin: 8px 0;
+  }
+  .controls button {
+    font-family: 'Cinzel', serif;
+    padding: 5px 12px;
+    border: 1px solid #666;
+    background: #333;
+    color: #ddd;
+    cursor: pointer;
+    font-size: 11px;
+    letter-spacing: 1px;
+    transition: all 0.2s;
+  }
+  .controls button:hover { background: #555; }
+  .controls button.active { background: #8a6a3a; color: #fff; border-color: #aa8a5a; }
+
+  /* Calibration panel */
+  #calibration {
+    background: #333;
+    border: 1px solid #555;
+    padding: 12px 18px;
+    margin: 8px 0;
+    display: none;
+    max-width: 1000px;
+    width: 100%;
+  }
+  #calibration.visible { display: block; }
+  #calibration h3 { font-size: 13px; margin-bottom: 8px; color: #d4c9a8; }
+  .cal-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 4px 0;
+    font-size: 11px;
+  }
+  .cal-row label { width: 100px; text-align: right; color: #aaa; }
+  .cal-row input[type=range] { flex: 1; max-width: 300px; }
+  .cal-row .val { width: 50px; color: #d4c9a8; font-weight: bold; }
+
+  /* Tooltip */
+  #tooltip {
+    position: fixed;
+    background: rgba(20,20,15,0.95);
+    color: #d4c9a8;
+    padding: 8px 12px;
+    border: 1px solid #8a6a3a;
+    font-size: 12px;
+    pointer-events: none;
+    display: none;
+    z-index: 100;
+    max-width: 220px;
+    line-height: 1.4;
+  }
+
+  /* Print */
+  @media print {
+    body { background: white; padding: 0; }
+    .controls, #calibration, h1, #tooltip { display: none !important; }
+    #board-container { border: none; width: 100%; }
+    @page { size: landscape; margin: 0; }
+  }
+</style>
+</head>
+<body>
+
+<h1>THE INSTITUTE</h1>
+
+<div class="controls">
+  <button onclick="toggle('hexnums')" class="active" id="btn-hexnums">Hex Numbers</button>
+  <button onclick="toggle('castles')" class="active" id="btn-castles">Castles</button>
+  <button onclick="toggle('specials')" class="active" id="btn-specials">Specials</button>
+  <button onclick="toggle('fertile')" class="active" id="btn-fertile">Fertile</button>
+  <button onclick="toggle('labels')" class="active" id="btn-labels">Region Labels</button>
+  <button onclick="toggle('reserve')" id="btn-reserve">Reserve Track</button>
+  <button onclick="toggle('grid')" id="btn-grid">Grid Overlay</button>
+  <button onclick="toggleCal()" id="btn-cal">⚙ Calibrate</button>
+  <button onclick="exportFinal()">Export PNG</button>
+</div>
+
+<div id="calibration">
+  <h3>⚙ ALIGNMENT CALIBRATION</h3>
+  <p style="font-size:10px;color:#888;margin-bottom:8px;">Adjust until the overlay hexes align with the base art hexes. Values auto-save to localStorage.</p>
+  <div class="cal-row"><label>Offset X:</label><input type="range" id="cal-ox" min="-100" max="300" step="0.5"><span class="val" id="val-ox"></span></div>
+  <div class="cal-row"><label>Offset Y:</label><input type="range" id="cal-oy" min="-100" max="300" step="0.5"><span class="val" id="val-oy"></span></div>
+  <div class="cal-row"><label>Hex Radius:</label><input type="range" id="cal-r" min="20" max="80" step="0.5"><span class="val" id="val-r"></span></div>
+  <div class="cal-row"><label>Spacing X:</label><input type="range" id="cal-sx" min="0.8" max="1.2" step="0.002"><span class="val" id="val-sx"></span></div>
+  <div class="cal-row"><label>Spacing Y:</label><input type="range" id="cal-sy" min="0.6" max="1.0" step="0.002"><span class="val" id="val-sy"></span></div>
+  <div class="cal-row"><label>Overlay Opacity:</label><input type="range" id="cal-op" min="0" max="1" step="0.05"><span class="val" id="val-op"></span></div>
+  <div class="cal-row"><label>Flip Stagger:</label><input type="range" id="cal-flip" min="0" max="1" step="1"><span class="val" id="val-flip"></span></div>
+  <h3 style="margin-top:12px;">PER-ROW SETTINGS</h3>
+  <div style="display:grid;grid-template-columns:55px 1fr 28px 1fr 28px 1fr 28px 1fr 28px;gap:3px 6px;align-items:center;font-size:10px;">
+    <span style="color:#aaa;">Row</span><span style="color:#aaa;text-align:center;">Hexes</span><span></span><span style="color:#aaa;text-align:center;">X Offset</span><span></span><span style="color:#aaa;text-align:center;">Size ×</span><span></span><span style="color:#aaa;text-align:center;">Spacing ×</span><span></span>
+    <label style="text-align:right;">Row 0:</label><input type="range" id="cal-rh0" min="4" max="14" step="1"><span class="val" id="val-rh0"></span><input type="range" id="cal-ro0" min="-3" max="3" step="0.1"><span class="val" id="val-ro0"></span><input type="range" id="cal-rs0" min="0.7" max="1.3" step="0.01"><span class="val" id="val-rs0"></span><input type="range" id="cal-rp0" min="0.7" max="1.3" step="0.01"><span class="val" id="val-rp0"></span>
+    <label style="text-align:right;">Row 1:</label><input type="range" id="cal-rh1" min="4" max="14" step="1"><span class="val" id="val-rh1"></span><input type="range" id="cal-ro1" min="-3" max="3" step="0.1"><span class="val" id="val-ro1"></span><input type="range" id="cal-rs1" min="0.7" max="1.3" step="0.01"><span class="val" id="val-rs1"></span><input type="range" id="cal-rp1" min="0.7" max="1.3" step="0.01"><span class="val" id="val-rp1"></span>
+    <label style="text-align:right;">Row 2:</label><input type="range" id="cal-rh2" min="4" max="14" step="1"><span class="val" id="val-rh2"></span><input type="range" id="cal-ro2" min="-3" max="3" step="0.1"><span class="val" id="val-ro2"></span><input type="range" id="cal-rs2" min="0.7" max="1.3" step="0.01"><span class="val" id="val-rs2"></span><input type="range" id="cal-rp2" min="0.7" max="1.3" step="0.01"><span class="val" id="val-rp2"></span>
+    <label style="text-align:right;">Row 3:</label><input type="range" id="cal-rh3" min="4" max="14" step="1"><span class="val" id="val-rh3"></span><input type="range" id="cal-ro3" min="-3" max="3" step="0.1"><span class="val" id="val-ro3"></span><input type="range" id="cal-rs3" min="0.7" max="1.3" step="0.01"><span class="val" id="val-rs3"></span><input type="range" id="cal-rp3" min="0.7" max="1.3" step="0.01"><span class="val" id="val-rp3"></span>
+    <label style="text-align:right;">Row 4:</label><input type="range" id="cal-rh4" min="4" max="14" step="1"><span class="val" id="val-rh4"></span><input type="range" id="cal-ro4" min="-3" max="3" step="0.1"><span class="val" id="val-ro4"></span><input type="range" id="cal-rs4" min="0.7" max="1.3" step="0.01"><span class="val" id="val-rs4"></span><input type="range" id="cal-rp4" min="0.7" max="1.3" step="0.01"><span class="val" id="val-rp4"></span>
+    <label style="text-align:right;">Row 5:</label><input type="range" id="cal-rh5" min="4" max="14" step="1"><span class="val" id="val-rh5"></span><input type="range" id="cal-ro5" min="-3" max="3" step="0.1"><span class="val" id="val-ro5"></span><input type="range" id="cal-rs5" min="0.7" max="1.3" step="0.01"><span class="val" id="val-rs5"></span><input type="range" id="cal-rp5" min="0.7" max="1.3" step="0.01"><span class="val" id="val-rp5"></span>
+    <label style="text-align:right;">Row 6:</label><input type="range" id="cal-rh6" min="4" max="14" step="1"><span class="val" id="val-rh6"></span><input type="range" id="cal-ro6" min="-3" max="3" step="0.1"><span class="val" id="val-ro6"></span><input type="range" id="cal-rs6" min="0.7" max="1.3" step="0.01"><span class="val" id="val-rs6"></span><input type="range" id="cal-rp6" min="0.7" max="1.3" step="0.01"><span class="val" id="val-rp6"></span>
+    <label style="text-align:right;">Row 7:</label><input type="range" id="cal-rh7" min="4" max="14" step="1"><span class="val" id="val-rh7"></span><input type="range" id="cal-ro7" min="-3" max="3" step="0.1"><span class="val" id="val-ro7"></span><input type="range" id="cal-rs7" min="0.7" max="1.3" step="0.01"><span class="val" id="val-rs7"></span><input type="range" id="cal-rp7" min="0.7" max="1.3" step="0.01"><span class="val" id="val-rp7"></span>
+    <label style="text-align:right;">Row 8:</label><input type="range" id="cal-rh8" min="4" max="14" step="1"><span class="val" id="val-rh8"></span><input type="range" id="cal-ro8" min="-3" max="3" step="0.1"><span class="val" id="val-ro8"></span><input type="range" id="cal-rs8" min="0.7" max="1.3" step="0.01"><span class="val" id="val-rs8"></span><input type="range" id="cal-rp8" min="0.7" max="1.3" step="0.01"><span class="val" id="val-rp8"></span>
+  </div>
+  <h3 style="margin-top:12px;">ICON SIZES &amp; POSITIONS</h3>
+  <div style="display:grid;grid-template-columns:80px 1fr 35px 1fr 35px 1fr 35px;gap:2px 6px;align-items:center;font-size:10px;">
+    <span style="color:#aaa;"></span><span style="color:#aaa;text-align:center;">Size</span><span></span><span style="color:#aaa;text-align:center;">Offset X</span><span></span><span style="color:#aaa;text-align:center;">Offset Y</span><span></span>
+    <label style="text-align:right;color:#aaa;">Food:</label><input type="range" id="cal-szFood" min="0.1" max="4" step="0.05"><span class="val" id="val-szFood"></span><input type="range" id="cal-oxFood" min="-0.6" max="0.6" step="0.02"><span class="val" id="val-oxFood"></span><input type="range" id="cal-oyFood" min="-0.6" max="0.6" step="0.02"><span class="val" id="val-oyFood"></span>
+    <label style="text-align:right;color:#aaa;">Castle:</label><input type="range" id="cal-szCastle" min="0.2" max="4" step="0.05"><span class="val" id="val-szCastle"></span><input type="range" id="cal-oxCastle" min="-0.6" max="0.6" step="0.02"><span class="val" id="val-oxCastle"></span><input type="range" id="cal-oyCastle" min="-0.6" max="0.6" step="0.02"><span class="val" id="val-oyCastle"></span>
+    <label style="text-align:right;color:#aaa;">Watchtower:</label><input type="range" id="cal-szWatch" min="0.1" max="4" step="0.05"><span class="val" id="val-szWatch"></span><input type="range" id="cal-oxWatch" min="-0.6" max="0.6" step="0.02"><span class="val" id="val-oxWatch"></span><input type="range" id="cal-oyWatch" min="-0.6" max="0.6" step="0.02"><span class="val" id="val-oyWatch"></span>
+    <label style="text-align:right;color:#aaa;">Discovery:</label><input type="range" id="cal-szDisc" min="0.1" max="4" step="0.05"><span class="val" id="val-szDisc"></span><input type="range" id="cal-oxDisc" min="-0.6" max="0.6" step="0.02"><span class="val" id="val-oxDisc"></span><input type="range" id="cal-oyDisc" min="-0.6" max="0.6" step="0.02"><span class="val" id="val-oyDisc"></span>
+    <label style="text-align:right;color:#aaa;">Cavern:</label><input type="range" id="cal-szCavern" min="0.1" max="4" step="0.05"><span class="val" id="val-szCavern"></span><input type="range" id="cal-oxCavern" min="-0.6" max="0.6" step="0.02"><span class="val" id="val-oxCavern"></span><input type="range" id="cal-oyCavern" min="-0.6" max="0.6" step="0.02"><span class="val" id="val-oyCavern"></span>
+    <label style="text-align:right;color:#aaa;">Hex Numbers:</label><input type="range" id="cal-szNums" min="0.1" max="4" step="0.05"><span class="val" id="val-szNums"></span><input type="range" id="cal-oxNums" min="-0.6" max="0.6" step="0.02"><span class="val" id="val-oxNums"></span><input type="range" id="cal-oyNums" min="-0.6" max="0.6" step="0.02"><span class="val" id="val-oyNums"></span>
+    <label style="text-align:right;color:#aaa;">Reserve W:</label><input type="range" id="cal-rsW" min="0.5" max="2" step="0.05"><span class="val" id="val-rsW"></span>
+    <label style="text-align:right;color:#aaa;">Reserve H:</label><input type="range" id="cal-rsH" min="0.5" max="2" step="0.05"><span class="val" id="val-rsH"></span>
+    <label style="text-align:right;color:#aaa;">Reserve X:</label><input type="range" id="cal-rsX" min="-1" max="1" step="0.02"><span class="val" id="val-rsX"></span>
+    <label style="text-align:right;color:#aaa;">Reserve Y:</label><input type="range" id="cal-rsY" min="-1" max="1" step="0.02"><span class="val" id="val-rsY"></span>
+    <label style="text-align:right;color:#aaa;">Labels:</label><input type="range" id="cal-szLabels" min="0.2" max="4" step="0.05"><span class="val" id="val-szLabels"></span><input type="range" id="cal-oxLabels" min="-0.6" max="0.6" step="0.02"><span class="val" id="val-oxLabels"></span><input type="range" id="cal-oyLabels" min="-0.6" max="0.6" step="0.02"><span class="val" id="val-oyLabels"></span>
+  </div>
+  <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
+    <button onclick="resetCal()" style="font-size:10px;padding:4px 10px;">Reset to Defaults</button>
+    <button onclick="saveCal()" style="font-size:10px;padding:4px 10px;">💾 Save to File</button>
+    <button onclick="document.getElementById('load-file').click()" style="font-size:10px;padding:4px 10px;">📂 Load from File</button>
+    <input type="file" id="load-file" accept=".json" style="display:none;" onchange="loadCal(this)">
+    <button onclick="copyCal()" style="font-size:10px;padding:4px 10px;">📋 Copy JSON</button>
+  </div>
+</div>
+
+<div id="board-container">
+  <img id="base-art" src="base_art.png" alt="Base art — save your Nano Banana image as map/base_art.png"
+       onerror="this.style.background='#d8d0c0';this.style.width='1200px';this.style.height='900px';this.alt='⚠ Place base_art.png (or .jpg) in the map/ folder';">
+  <svg id="overlay-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+</div>
+
+<div id="tooltip"></div>
+
+<script>
+(function() {
+  'use strict';
+
+  // ---- HEX DATA (v5.0 — 77-hex grid: 6-8-9-10-10-11-10-8-5) ----
+  // Regions: Mountains(10), North Woods(10), Highlands(9), Postern Hills(5),
+  //          Argos River(8), Greatwoods(16), Southern Reaches(10), South Sea Coast(9)
+  // Fertile: 47 | Barren: 20 | Castles: 10 = 77
+  const D = [
+    // Row 0 — 6 hexes
+    { id:1,  c:0, r:0, rg:'Mountains',       rs:null,    sp:null },
+    { id:2,  c:1, r:0, rg:'Mountains',       rs:null,    sp:null },
+    { id:3,  c:2, r:0, rg:'North Woods',     rs:'Food',  sp:null },
+    { id:4,  c:3, r:0, rg:'North Woods',     rs:'Food',  sp:null },
+    { id:5,  c:4, r:0, rg:'Highlands',       rs:null,    sp:null },
+    { id:6,  c:5, r:0, rg:'Highlands',       rs:null,    sp:'Minerva Castle' },
+    // Row 1 — 8 hexes
+    { id:7,  c:0, r:1, rg:'Mountains',       rs:null,    sp:null },
+    { id:8,  c:1, r:1, rg:'Mountains',       rs:null,    sp:'Jupiter Castle' },
+    { id:9,  c:2, r:1, rg:'North Woods',     rs:'Food',  sp:null },
+    { id:10, c:3, r:1, rg:'North Woods',     rs:'Food',  sp:'Discovery Site' },
+    { id:11, c:4, r:1, rg:'Highlands',       rs:'Food',  sp:null },
+    { id:12, c:5, r:1, rg:'Highlands',       rs:null,    sp:null },
+    { id:13, c:6, r:1, rg:'Highlands',       rs:null,    sp:null },
+    { id:14, c:7, r:1, rg:'Postern Hills',   rs:null,    sp:null },
+    // Row 2 — 9 hexes
+    { id:15, c:0, r:2, rg:'Mountains',       rs:null,    sp:null },
+    { id:16, c:1, r:2, rg:'Mountains',       rs:null,    sp:'Watchtower' },
+    { id:17, c:2, r:2, rg:'North Woods',     rs:'Food',  sp:null },
+    { id:18, c:3, r:2, rg:'North Woods',     rs:null,    sp:'Ceres Castle' },
+    { id:19, c:4, r:2, rg:'North Woods',     rs:'Food',  sp:null },
+    { id:20, c:5, r:2, rg:'Highlands',       rs:'Food',  sp:null },
+    { id:21, c:6, r:2, rg:'Highlands',       rs:'Food',  sp:'Discovery Site' },
+    { id:22, c:7, r:2, rg:'Highlands',       rs:null,    sp:null },
+    { id:23, c:8, r:2, rg:'Postern Hills',   rs:null,    sp:null },
+    // Row 3 — 10 hexes
+    { id:24, c:0, r:3, rg:'Mountains',       rs:null,    sp:null },
+    { id:25, c:1, r:3, rg:'Mountains',       rs:'Food',  sp:'Discovery Site' },
+    { id:26, c:2, r:3, rg:'North Woods',     rs:'Food',  sp:null },
+    { id:27, c:3, r:3, rg:'North Woods',     rs:'Food',  sp:'Discovery Site' },
+    { id:28, c:4, r:3, rg:'Argos River',     rs:'Food',  sp:null },
+    { id:29, c:5, r:3, rg:'Argos River',     rs:'Food',  sp:null },
+    { id:30, c:6, r:3, rg:'Highlands',       rs:null,    sp:null },
+    { id:31, c:7, r:3, rg:'Postern Hills',   rs:'Food',  sp:null },
+    { id:32, c:8, r:3, rg:'Postern Hills',   rs:null,    sp:'Juno Castle' },
+    { id:33, c:9, r:3, rg:'Postern Hills',   rs:'Food',  sp:null },
+    // Row 4 — 10 hexes
+    { id:34, c:0, r:4, rg:'Mountains',       rs:'Food',  sp:null },
+    { id:35, c:1, r:4, rg:'Southern Reaches',rs:'Food',  sp:null },
+    { id:36, c:2, r:4, rg:'North Woods',     rs:'Food',  sp:null },
+    { id:37, c:3, r:4, rg:'Southern Reaches',rs:'Food',  sp:'Discovery Site' },
+    { id:38, c:4, r:4, rg:'Argos River',     rs:null,    sp:'Mercury Castle' },
+    { id:39, c:5, r:4, rg:'Greatwoods',      rs:null,    sp:null },
+    { id:40, c:6, r:4, rg:'Greatwoods',      rs:'Food',  sp:null },
+    { id:41, c:7, r:4, rg:'Greatwoods',      rs:'Food',  sp:null },
+    { id:42, c:8, r:4, rg:'Greatwoods',      rs:'Food',  sp:null },
+    { id:43, c:9, r:4, rg:'Greatwoods',      rs:'Food',  sp:null },
+    // Row 5 — 11 hexes (widest)
+    { id:44, c:0,  r:5, rg:'Mountains',       rs:null,    sp:null },
+    { id:45, c:1,  r:5, rg:'Southern Reaches',rs:null,    sp:'Mars Castle' },
+    { id:46, c:2,  r:5, rg:'Southern Reaches',rs:null,    sp:null },
+    { id:47, c:3,  r:5, rg:'Argos River',     rs:'Food',  sp:null },
+    { id:48, c:4,  r:5, rg:'Argos River',     rs:'Food',  sp:'Watchtower' },
+    { id:49, c:5,  r:5, rg:'Argos River',     rs:'Food',  sp:null },
+    { id:50, c:6,  r:5, rg:'Greatwoods',      rs:'Food',  sp:null },
+    { id:51, c:7,  r:5, rg:'Greatwoods',      rs:'Food',  sp:null },
+    { id:52, c:8,  r:5, rg:'Greatwoods',      rs:null,    sp:'Diana Castle' },
+    { id:53, c:9,  r:5, rg:'Greatwoods',      rs:'Food',  sp:null },
+    { id:54, c:10, r:5, rg:'Greatwoods',      rs:null,    sp:null },
+    // Row 6 — 10 hexes
+    { id:55, c:0, r:6, rg:'Southern Reaches',rs:null,    sp:null },
+    { id:56, c:1, r:6, rg:'Southern Reaches',rs:'Food',  sp:null },
+    { id:57, c:2, r:6, rg:'Southern Reaches',rs:'Food',  sp:null },
+    { id:58, c:3, r:6, rg:'Argos River',     rs:'Food',  sp:null },
+    { id:59, c:4, r:6, rg:'Argos River',     rs:'Food',  sp:null },
+    { id:60, c:5, r:6, rg:'South Sea Coast', rs:'Food',  sp:null },
+    { id:61, c:6, r:6, rg:'Greatwoods',      rs:null,    sp:null },
+    { id:62, c:7, r:6, rg:'Greatwoods',      rs:'Food',  sp:null },
+    { id:63, c:8, r:6, rg:'Greatwoods',      rs:'Food',  sp:'Discovery Site' },
+    { id:64, c:9, r:6, rg:'Greatwoods',      rs:'Food',  sp:'Cavern Entrance' },
+    // Row 7 — 8 hexes
+    { id:65, c:0, r:7, rg:'Southern Reaches',rs:null,    sp:'Pluto Castle' },
+    { id:66, c:1, r:7, rg:'Southern Reaches',rs:'Food',  sp:'Cavern Entrance' },
+    { id:67, c:2, r:7, rg:'Argos River',     rs:null,    sp:null },
+    { id:68, c:3, r:7, rg:'South Sea Coast', rs:'Food',  sp:null },
+    { id:69, c:4, r:7, rg:'South Sea Coast', rs:'Food',  sp:null },
+    { id:70, c:5, r:7, rg:'South Sea Coast', rs:null,    sp:'Neptune Castle' },
+    { id:71, c:6, r:7, rg:'South Sea Coast', rs:'Food',  sp:null },
+    { id:72, c:7, r:7, rg:'Greatwoods',      rs:'Food',  sp:null },
+    // Row 8 — 5 hexes
+    { id:73, c:0, r:8, rg:'Southern Reaches',rs:'Food',  sp:'Discovery Site' },
+    { id:74, c:1, r:8, rg:'South Sea Coast', rs:'Food',  sp:null },
+    { id:75, c:2, r:8, rg:'South Sea Coast', rs:null,    sp:'Apollo Castle' },
+    { id:76, c:3, r:8, rg:'South Sea Coast', rs:'Food',  sp:null },
+    { id:77, c:4, r:8, rg:'South Sea Coast', rs:'Food',  sp:'Watchtower' }
+  ];
+
+  const CASTLES = {
+    6:  { n:'Minerva',  t:'home',    house:'Minerva' },
+    45: { n:'Mars',     t:'home',    house:'Mars' },
+    52: { n:'Diana',    t:'home',    house:'Diana' },
+    75: { n:'Apollo',   t:'home',    house:'Apollo' },
+    8:  { n:'Jupiter',  t:'neutral', house:null },
+    18: { n:'Ceres',    t:'neutral', house:null },
+    32: { n:'Juno',     t:'neutral', house:null },
+    38: { n:'Mercury',  t:'neutral', house:null },
+    65: { n:'Pluto',    t:'neutral', house:null },
+    70: { n:'Neptune',  t:'neutral', house:null }
+  };
+
+  // River hex edges — pairs of adjacent hex IDs along the Argos River
+  const RIVER = [
+    [28,29],[28,38],[29,38],[38,47],[38,48],[47,48],[47,58],[48,59],[58,59],[58,67]
+  ];
+
+  const REGION_LABELS = [
+    { name:'MOUNTAINS',        c:0.5,  r:2.5, size:2.0, rot:-15 },
+    { name:'NORTH WOODS',      c:2.8,  r:1.0, size:1.8, rot:0 },
+    { name:'HIGHLANDS',        c:5.8,  r:1.2, size:1.8, rot:5 },
+    { name:'POSTERN HILLS',    c:8.2,  r:2.8, size:1.3, rot:10 },
+    { name:'ARGOS RIVER',      c:3.5,  r:5.5, size:1.4, rot:-25 },
+    { name:'GREATWOODS',       c:7.5,  r:5.2, size:2.2, rot:0 },
+    { name:'SOUTHERN REACHES', c:0.8,  r:6.8, size:1.2, rot:0 },
+    { name:'SOUTH SEA COAST',  c:3.8,  r:7.5, size:1.2, rot:0 }
+  ];
+
+  // ---- CALIBRATION STATE ----
+  // These defaults are estimates — user adjusts with sliders
+  const DEFAULTS = {
+    ox: 282.5, oy: 113.5, r: 59.5, sx: 0.994, sy: 0.73, op: 1.0, flip: 1,
+    ro0:0.2, ro1:0.2, ro2:0.3, ro3:0.2, ro4:-1.7, ro5:-1.7, ro6:-1.7, ro7:0.2, ro8:2.3,
+    rh0:6, rh1:8, rh2:9, rh3:10, rh4:10, rh5:11, rh6:10, rh7:8, rh8:5,
+    rs0:1, rs1:0.99, rs2:1, rs3:0.99, rs4:0.99, rs5:0.99, rs6:0.99, rs7:1, rs8:0.99,
+    rp0:1, rp1:1.01, rp2:0.99, rp3:1, rp4:1, rp5:1, rp6:1, rp7:1, rp8:1,
+    szFood:0.7, szCastle:1, szWatch:0.7, szDisc:0.7, szCavern:0.7, szNums:0.7, szLabels:1,
+    oxFood:0.08, oyFood:0.12, oxCastle:0, oyCastle:0, oxWatch:0, oyWatch:0,
+    oxDisc:0, oyDisc:0, oxCavern:0, oyCavern:0, oxNums:-0.52, oyNums:-0.40, oxLabels:0, oyLabels:0,
+    rsW:1, rsH:1, rsX:0, rsY:0
+  };
+  let cal = Object.assign({}, DEFAULTS);
+
+  // Load saved calibration
+  try {
+    const saved = JSON.parse(localStorage.getItem('institute-board-cal'));
+    if (saved) Object.assign(cal, saved);
+  } catch(e) {}
+
+  // ---- LAYER STATE ----
+  const layers = { hexnums: true, castles: true, specials: true, fertile: true, labels: true, reserve: false, grid: false };
+
+  // ---- SVG HELPERS ----
+  const NS = 'http://www.w3.org/2000/svg';
+  function el(tag, a) {
+    const e = document.createElementNS(NS, tag);
+    if (a) Object.entries(a).forEach(([k,v]) => e.setAttribute(k, v));
+    return e;
+  }
+
+  function hexPts(cx, cy, r) {
+    const pts = [];
+    for (let i = 0; i < 6; i++) {
+      const ang = Math.PI / 180 * (60 * i - 30);
+      pts.push((cx + r * Math.cos(ang)).toFixed(2) + ',' + (cy + r * Math.sin(ang)).toFixed(2));
+    }
+    return pts.join(' ');
+  }
+
+  function rowRadius(r) {
+    return cal.r * (cal['rs' + r] || 1);
+  }
+
+  // Check if a game hex (by its column and row) falls within the art's grid
+  function hexVisible(c, r) {
+    const count = cal['rh' + r];
+    return count !== undefined ? c < count : true;
+  }
+
+  function center(c, r) {
+    const rr = rowRadius(r);
+    const spacingMul = cal['rp' + r] || 1;
+    const W = Math.sqrt(3) * rr * cal.sx * spacingMul;
+    const H = 2 * cal.r * cal.sy; // vertical spacing uses global radius
+    const staggerRow = cal.flip ? (r % 2 === 0) : (r % 2 === 1);
+    const stagger = staggerRow ? W / 2 : 0;
+    const rowShift = (cal['ro' + r] || 0) * Math.sqrt(3) * cal.r * cal.sx / 2;
+
+    return {
+      x: cal.ox + c * W + stagger + rowShift,
+      y: cal.oy + r * H
+    };
+  }
+
+  // ---- RENDER ----
+  const svg = document.getElementById('overlay-svg');
+  const tooltip = document.getElementById('tooltip');
+
+  function render() {
+    // Get image dimensions for viewBox
+    const img = document.getElementById('base-art');
+    const w = img.naturalWidth || 1200;
+    const h = img.naturalHeight || 900;
+    const svgW = w;
+    const svgH = h;
+    svg.setAttribute('viewBox', '0 0 ' + svgW + ' ' + svgH);
+
+    // Clear
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+    // Defs
+    const defs = el('defs');
+
+    // Drop shadow for text readability
+    const fShadow = el('filter', { id: 'text-bg', x: '-0.15', y: '-0.15', width: '1.3', height: '1.4' });
+    fShadow.appendChild(el('feFlood', { 'flood-color': 'rgba(245,240,232,0.85)', result: 'bg' }));
+    fShadow.appendChild(el('feMerge'));
+    fShadow.lastChild.appendChild(el('feMergeNode', { in: 'bg' }));
+    fShadow.lastChild.appendChild(el('feMergeNode', { in: 'SourceGraphic' }));
+    defs.appendChild(fShadow);
+
+    // Glow for icons
+    const fGlow = el('filter', { id: 'icon-glow', x: '-0.3', y: '-0.3', width: '1.6', height: '1.6' });
+    fGlow.appendChild(el('feFlood', { 'flood-color': 'rgba(245,240,232,0.9)', result: 'bg' }));
+    const fMerge = el('feMerge');
+    fMerge.appendChild(el('feMergeNode', { in: 'bg' }));
+    fMerge.appendChild(el('feMergeNode', { in: 'SourceGraphic' }));
+    fGlow.appendChild(fMerge);
+    defs.appendChild(fGlow);
+
+    // Arrowhead for reserve track
+    const marker = el('marker', {
+      id: 'arrowhead', markerWidth: 8, markerHeight: 6,
+      refX: 7, refY: 3, orient: 'auto', markerUnits: 'strokeWidth'
+    });
+    marker.appendChild(el('path', { d: 'M0,0 L8,3 L0,6 Z', fill: '#1a1a1a' }));
+    defs.appendChild(marker);
+
+    svg.appendChild(defs);
+
+    // Build position lookup
+    const pos = {};
+    D.forEach(h => { pos[h.id] = center(h.c, h.r); });
+
+    // ---- GRID OVERLAY (for calibration) ----
+    // Uses per-row hex counts from calibration, NOT game data,
+    // so you can match the art's actual hex layout.
+    const gGrid = el('g', { id: 'layer-grid', display: layers.grid ? 'inline' : 'none', opacity: '0.4' });
+    for (let r = 0; r <= 8; r++) {
+      const count = cal['rh' + r] || 8;
+      const rr = rowRadius(r);
+      for (let c = 0; c < count; c++) {
+        const p = center(c, r);
+        gGrid.appendChild(el('polygon', {
+          points: hexPts(p.x, p.y, rr * 0.97),
+          fill: 'none', stroke: '#ff0000', 'stroke-width': '1.5', 'stroke-opacity': '0.6'
+        }));
+      }
+    }
+    svg.appendChild(gGrid);
+
+    // ---- HEX NUMBERS ----
+    const gNums = el('g', { id: 'layer-hexnums', display: layers.hexnums ? 'inline' : 'none' });
+    D.forEach(h => {
+      if (!hexVisible(h.c, h.r)) return;
+      const p = pos[h.id];
+      const rr = rowRadius(h.r);
+      const numSz = rr * 0.26 * (cal.szNums || 1);
+      const nx = p.x + rr * (cal.oxNums || -0.52);
+      const ny = p.y + rr * (cal.oyNums || -0.40);
+      const numBg = el('text', {
+        x: nx, y: ny,
+        'font-family': "'Cinzel', serif", 'font-size': numSz,
+        'font-weight': '900', fill: '#fff', 'text-anchor': 'start',
+        stroke: '#fff', 'stroke-width': '3', 'stroke-linejoin': 'round', 'paint-order': 'stroke'
+      });
+      numBg.textContent = h.id;
+      gNums.appendChild(numBg);
+
+      const num = el('text', {
+        x: nx, y: ny,
+        'font-family': "'Cinzel', serif", 'font-size': numSz,
+        'font-weight': '900', fill: '#b33', 'text-anchor': 'start'
+      });
+      num.textContent = h.id;
+      gNums.appendChild(num);
+    });
+    svg.appendChild(gNums);
+
+    // ---- FERTILE MARKERS ----
+    const gFert = el('g', { id: 'layer-fertile', display: layers.fertile ? 'inline' : 'none' });
+    D.forEach(h => {
+      if (!hexVisible(h.c, h.r)) return;
+      if (h.rs !== 'Food') return;
+      const p = pos[h.id];
+      const rr = rowRadius(h.r);
+      const sz = rr * 0.38 * (cal.szFood || 1);
+      const fx = p.x + rr * (cal.oxFood || 0) - sz / 2;
+      const fy = p.y + rr * (cal.oyFood || 0) - sz * 0.4;
+      // Food icon (bread/meat/carrots)
+      const icon = el('image', {
+        href: 'food.png',
+        x: fx, y: fy,
+        width: sz, height: sz * 0.8
+      });
+      gFert.appendChild(icon);
+    });
+    svg.appendChild(gFert);
+
+    // ---- CASTLES ----
+    const gCastles = el('g', { id: 'layer-castles', display: layers.castles ? 'inline' : 'none' });
+    Object.entries(CASTLES).forEach(([id, castle]) => {
+      const p = pos[id];
+      if (!p) return;
+      const hd = D.find(h => h.id == id);
+      if (hd && !hexVisible(hd.c, hd.r)) return;
+      const isHome = castle.t === 'home';
+      const rr = hd ? rowRadius(hd.r) : cal.r;
+      const sz = rr * 0.55 * (cal.szCastle || 1);
+
+      const cx = p.x + rr * (cal.oxCastle || 0);
+      const cy = p.y + rr * (cal.oyCastle || 0);
+
+      // Castle image
+      const icon = el('image', {
+        href: 'castle.png',
+        x: cx - sz, y: cy - sz,
+        width: sz * 2, height: sz * 2
+      });
+      gCastles.appendChild(icon);
+
+      // Castle names removed — using icon-only display
+    });
+    svg.appendChild(gCastles);
+
+    // ---- SPECIALS (non-castle) ----
+    const gSpec = el('g', { id: 'layer-specials', display: layers.specials ? 'inline' : 'none' });
+    D.forEach(h => {
+      if (!h.sp || h.sp.includes('Castle')) return;
+      if (!hexVisible(h.c, h.r)) return;
+      const p = pos[h.id];
+
+      const rr = rowRadius(h.r);
+      if (h.sp === 'Watchtower') {
+        const sz = rr * 0.55 * (cal.szWatch || 1);
+        const wx = p.x + rr * (cal.oxWatch || 0);
+        const wy = p.y + rr * (cal.oyWatch || 0);
+        const icon = el('image', {
+          href: 'tower.png',
+          x: wx - sz, y: wy - sz,
+          width: sz * 2, height: sz * 2,
+          preserveAspectRatio: 'xMidYMid meet'
+        });
+        gSpec.appendChild(icon);
+      }
+      else if (h.sp === 'Cavern Entrance') {
+        const sz = rr * 0.55 * (cal.szCavern || 1);
+        const cvx = p.x + rr * (cal.oxCavern || 0);
+        const cvy = p.y + rr * (cal.oyCavern || 0);
+        const icon = el('image', {
+          href: 'cavern.png',
+          x: cvx - sz, y: cvy - sz,
+          width: sz * 2, height: sz * 2,
+          preserveAspectRatio: 'xMidYMid meet'
+        });
+        gSpec.appendChild(icon);
+      }
+      else if (h.sp === 'Discovery Site') {
+        const sz = rr * 0.55 * (cal.szDisc || 1);
+        const dx = p.x + rr * (cal.oxDisc || 0);
+        const dy = p.y + rr * (cal.oyDisc || 0);
+        const icon = el('image', {
+          href: 'discovery.png',
+          x: dx - sz, y: dy - sz,
+          width: sz * 2, height: sz * 2,
+          preserveAspectRatio: 'xMidYMid meet'
+        });
+        gSpec.appendChild(icon);
+      }
+    });
+    svg.appendChild(gSpec);
+
+    // ---- REGION LABELS ----
+    const gLabels = el('g', { id: 'layer-labels', display: layers.labels ? 'inline' : 'none' });
+    REGION_LABELS.forEach(lbl => {
+      const p = center(lbl.c, lbl.r);
+      const fontSize = cal.r * lbl.size * 0.18 * (cal.szLabels || 1);
+      const lx = p.x + cal.r * (cal.oxLabels || 0);
+      const ly = p.y + cal.r * (cal.oyLabels || 0);
+
+      const lines = lbl.name.split('\n');
+      if (lines.length === 1) lines[0] = lbl.name;
+
+      const g = el('g', { transform: 'translate(' + lx + ',' + ly + ') rotate(' + (lbl.rot || 0) + ')' });
+
+      lines.forEach((line, i) => {
+        // Background stroke for readability
+        const tbg = el('text', {
+          x: 0, y: i * (fontSize + 2),
+          'text-anchor': 'middle', 'font-family': "'Cinzel Decorative', 'Cinzel', serif",
+          'font-size': fontSize, 'font-weight': '700',
+          fill: '#1a1a1a', stroke: 'rgba(245,240,232,0.7)', 'stroke-width': 4,
+          'stroke-linejoin': 'round', 'paint-order': 'stroke',
+          'letter-spacing': cal.r * 0.08
+        });
+        tbg.textContent = line;
+        g.appendChild(tbg);
+      });
+      gLabels.appendChild(g);
+    });
+    svg.appendChild(gLabels);
+
+    // ---- RESERVE TRACK ----
+    const gReserve = el('g', { id: 'layer-reserve', display: layers.reserve ? 'inline' : 'none' });
+
+    // Position overlaying the bottom of the map (not extending it)
+    const trackY = svgH - cal.r * 2.5;
+    const trackW = cal.r * 10;
+    const trackStartX = svgW / 2 - trackW / 2;
+
+    // Progressive shared track: spots 0-3, compact horizontal
+    const spots = [
+      { num: 0, range: null },
+      { num: 1, range: 3 },
+      { num: 2, range: 6 },
+      { num: 3, range: 9 }
+    ];
+
+    const rsScale = cal.rsW || 1;
+    const rsScaleH = cal.rsH || 1;
+    const spotSize = cal.r * 1.05 * rsScale;
+    const spotGap = cal.r * 0.35 * rsScale;
+    const totalTrackW2 = spots.length * (spotSize * 2.6) + (spots.length - 1) * spotGap;
+    const titleH = cal.r * 0.35;
+    const rsOffX = cal.r * (cal.rsX || 0) * 5;
+    const rsOffY = cal.r * (cal.rsY || 0) * 3;
+    const spotY = trackY + titleH + rsOffY;
+    const spotH = spotSize * 1.5 * rsScaleH;
+    const panelH = titleH + spotH + cal.r * 0.3;
+
+    // Panel background — tight fit
+    const panelBg = el('rect', {
+      x: svgW / 2 - totalTrackW2 / 2 - cal.r * 0.3 + rsOffX,
+      y: trackY - cal.r * 0.15 + rsOffY,
+      width: totalTrackW2 + cal.r * 0.6,
+      height: panelH,
+      fill: 'rgba(245,240,232,0.92)',
+      stroke: '#1a1a1a',
+      'stroke-width': 2,
+      rx: 4
+    });
+    gReserve.appendChild(panelBg);
+
+    // Title — compact, just above boxes
+    const trackTitle = el('text', {
+      x: svgW / 2 + rsOffX, y: trackY + titleH * 0.6 + rsOffY,
+      'text-anchor': 'middle', 'font-family': "'Cinzel', serif",
+      'font-size': cal.r * 0.2, 'font-weight': '900', fill: '#1a1a1a',
+      'letter-spacing': 2
+    });
+    trackTitle.textContent = 'RESERVE TRACK — HIDDEN MARCH';
+    gReserve.appendChild(trackTitle);
+    const trackOX = svgW / 2 - totalTrackW2 / 2 + rsOffX;
+
+    spots.forEach((spot, i) => {
+      const sx = trackOX + i * (spotSize * 2.6 + spotGap);
+      const cx = sx + spotSize * 1.3;
+
+      // Connecting arrow to next spot
+      if (i < spots.length - 1) {
+        const arrowX1 = sx + spotSize * 2.6 + 2;
+        const arrowX2 = arrowX1 + spotGap - 6;
+        gReserve.appendChild(el('line', {
+          x1: arrowX1, y1: spotY + spotH * 0.5,
+          x2: arrowX2, y2: spotY + spotH * 0.5,
+          stroke: '#1a1a1a', 'stroke-width': 2,
+          'marker-end': 'url(#arrowhead)'
+        }));
+      }
+
+      // Spot — wide, shorter rectangle for armies
+      gReserve.appendChild(el('rect', {
+        x: sx, y: spotY,
+        width: spotSize * 2.6, height: spotH,
+        fill: i === 0 ? 'rgba(200,195,180,0.5)' : 'rgba(255,255,255,0.3)',
+        stroke: '#1a1a1a',
+        'stroke-width': 2,
+        rx: 6
+      }));
+
+      // Big ghost number — centered, behind units
+      const num = el('text', {
+        x: cx, y: spotY + spotH * 0.55,
+        'text-anchor': 'middle', 'font-family': "'Cinzel Decorative', 'Cinzel', serif",
+        'font-size': spotSize * 0.85, 'font-weight': '900',
+        fill: '#1a1a1a', opacity: 0.08
+      });
+      num.textContent = spot.num;
+      gReserve.appendChild(num);
+
+      // Range label — bottom of box, clear of unit area
+      const rangeLabel = el('text', {
+        x: cx, y: spotY + spotH * 0.88,
+        'text-anchor': 'middle', 'font-family': "'Cinzel', serif",
+        'font-size': spotSize * 0.2, fill: '#555',
+        'font-weight': '700'
+      });
+      rangeLabel.textContent = spot.range ? spot.range + ' hex range' : 'withdrawn';
+      gReserve.appendChild(rangeLabel);
+    });
+
+    svg.appendChild(gReserve);
+
+    // Set overall opacity
+    svg.style.opacity = cal.op;
+  }
+
+  // ---- CALIBRATION UI ----
+  // Auto-register all slider and value display elements from DEFAULTS keys
+  const sliders = {};
+  const vals = {};
+  Object.keys(DEFAULTS).forEach(k => {
+    const s = document.getElementById('cal-' + k);
+    const v = document.getElementById('val-' + k);
+    if (s) sliders[k] = s;
+    if (v) vals[k] = v;
+  });
+
+  function syncSliders() {
+    Object.keys(sliders).forEach(k => {
+      sliders[k].value = cal[k];
+      vals[k].textContent = cal[k];
+    });
+  }
+
+  Object.keys(sliders).forEach(k => {
+    sliders[k].addEventListener('input', function() {
+      cal[k] = parseFloat(this.value);
+      vals[k].textContent = cal[k];
+      localStorage.setItem('institute-board-cal', JSON.stringify(cal));
+      render();
+    });
+  });
+
+  window.resetCal = function() {
+    Object.assign(cal, DEFAULTS);
+    localStorage.removeItem('institute-board-cal');
+    syncSliders();
+    render();
+  };
+
+  window.toggleCal = function() {
+    document.getElementById('calibration').classList.toggle('visible');
+  };
+
+  window.toggle = function(name) {
+    layers[name] = !layers[name];
+    const layerEl = document.getElementById('layer-' + name);
+    if (layerEl) layerEl.setAttribute('display', layers[name] ? 'inline' : 'none');
+    document.getElementById('btn-' + name).classList.toggle('active', layers[name]);
+  };
+
+  // Save calibration to JSON file
+  window.saveCal = function() {
+    const blob = new Blob([JSON.stringify(cal, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'board_calibration.json';
+    a.click();
+  };
+
+  // Load calibration from JSON file
+  window.loadCal = function(input) {
+    const file = input.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      try {
+        const loaded = JSON.parse(e.target.result);
+        Object.assign(cal, loaded);
+        localStorage.setItem('institute-board-cal', JSON.stringify(cal));
+        syncSliders();
+        render();
+      } catch(err) { alert('Invalid calibration file'); }
+    };
+    reader.readAsText(file);
+    input.value = '';
+  };
+
+  // Copy calibration JSON to clipboard
+  window.copyCal = function() {
+    navigator.clipboard.writeText(JSON.stringify(cal, null, 2)).then(() => {
+      const btn = event.target;
+      btn.textContent = '✓ Copied!';
+      setTimeout(() => btn.textContent = '📋 Copy JSON', 1500);
+    });
+  };
+
+  window.exportFinal = function() {
+    const img = document.getElementById('base-art');
+    const w = img.naturalWidth || 1200;
+    const h = img.naturalHeight || 900;
+    const scale = 2;
+    const canvas = document.createElement('canvas');
+    canvas.width = w * scale;
+    canvas.height = h * scale;
+    const ctx = canvas.getContext('2d');
+
+    // Draw base art
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+    // Convert all <image> hrefs in SVG to inline base64 before serializing
+    const svgClone = svg.cloneNode(true);
+    const images = svgClone.querySelectorAll('image');
+    let pending = images.length;
+
+    function finalize() {
+      const svgData = new XMLSerializer().serializeToString(svgClone);
+      const svgImg = new Image();
+      svgImg.onload = function() {
+        ctx.drawImage(svgImg, 0, 0, canvas.width, canvas.height);
+        const a = document.createElement('a');
+        a.href = canvas.toDataURL('image/png');
+        a.download = 'institute_game_board.png';
+        a.click();
+      };
+      svgImg.onerror = function() {
+        alert('Export failed — SVG rendering error. Try a smaller scale or fewer layers.');
+      };
+      svgImg.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgData)));
+    }
+
+    if (pending === 0) { finalize(); return; }
+
+    images.forEach(imgEl => {
+      const href = imgEl.getAttribute('href') || imgEl.getAttributeNS('http://www.w3.org/1999/xlink', 'href');
+      if (!href || href.startsWith('data:')) { if (--pending === 0) finalize(); return; }
+
+      // Load the image and convert to base64
+      const tempImg = new Image();
+      tempImg.crossOrigin = 'anonymous';
+      tempImg.onload = function() {
+        const c = document.createElement('canvas');
+        c.width = tempImg.naturalWidth;
+        c.height = tempImg.naturalHeight;
+        const cx = c.getContext('2d');
+        cx.drawImage(tempImg, 0, 0);
+        const dataUrl = c.toDataURL('image/png');
+        imgEl.setAttribute('href', dataUrl);
+        imgEl.removeAttributeNS('http://www.w3.org/1999/xlink', 'href');
+        if (--pending === 0) finalize();
+      };
+      tempImg.onerror = function() {
+        // Skip failed images
+        if (--pending === 0) finalize();
+      };
+      tempImg.src = href;
+    });
+  };
+
+  // ---- INIT ----
+  syncSliders();
+
+  // Wait for image to load to get proper dimensions
+  const img = document.getElementById('base-art');
+  if (img.complete) {
+    render();
+  } else {
+    img.onload = render;
+    // Also render on error (placeholder mode)
+    img.onerror = function() {
+      this.style.background = '#d8d0c0';
+      this.style.width = '1200px';
+      this.style.height = '900px';
+      render();
+    };
+  }
+
+})();
+</script>
+</body>
+</html>

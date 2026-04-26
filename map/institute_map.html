@@ -1,0 +1,966 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Red Rising: The Institute — Map v4.0</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&family=Cinzel+Decorative:wght@700;900&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #2a2218;
+    font-family: 'Cinzel', 'Georgia', 'Times New Roman', serif;
+    color: #2C2C2C;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    min-height: 100vh;
+    padding: 20px;
+  }
+  #map-container { position: relative; display: inline-block; }
+  svg { display: block; }
+  #tooltip {
+    position: absolute; pointer-events: none;
+    background: rgba(20,16,10,0.94); color: #e8dcc8;
+    padding: 10px 14px; border-radius: 3px;
+    font-size: 12.5px; line-height: 1.6; white-space: nowrap;
+    opacity: 0; transition: opacity 0.15s ease; z-index: 100;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.5);
+    border: 1px solid rgba(180,160,120,0.3);
+    font-family: 'Cinzel', Georgia, serif;
+  }
+  #tooltip.visible { opacity: 1; }
+  #tooltip .tip-title { font-weight: 700; font-size: 13.5px; color: #d4a04a; margin-bottom: 2px; }
+  #tooltip .tip-region { color: #b0a890; }
+  #tooltip .tip-special { color: #c8a870; font-style: italic; }
+  @media print {
+    body { background: white; padding: 0; margin: 0; }
+    #map-container { width: 100%; }
+    svg { width: 100% !important; height: auto !important; }
+    #tooltip { display: none; }
+    @page { size: landscape; margin: 0.3in; }
+  }
+</style>
+</head>
+<body>
+<div id="map-container">
+  <svg id="map-svg"></svg>
+  <div id="tooltip"></div>
+</div>
+<script>
+(function() {
+  'use strict';
+
+  const R = 40;
+  const W = Math.sqrt(3) * R;
+  const H = 2 * R;
+  const OX = 70, OY = 80;
+
+  // Seeded random for reproducible terrain
+  function seededRng(seed) {
+    let s = seed;
+    return function() {
+      s = (s * 16807 + 0) % 2147483647;
+      return (s - 1) / 2147483646;
+    };
+  }
+
+  // Region definitions (muted/ink tones)
+  const RC = {
+    'Mountains':        { fill: '#8a8578', label: 'Mountains (Difficult)' },
+    'North Woods':      { fill: '#6b7a5a', label: 'North Woods (Forest)' },
+    'Highlands':        { fill: '#9a8e6e', label: 'Highlands' },
+    'Postern Hills':    { fill: '#9a8a6e', label: 'Postern Hills' },
+    'Argos River':      { fill: '#7a8e9a', label: 'Argos River (Fast Travel)' },
+    'Greatwoods':       { fill: '#5a6e4a', label: 'Greatwoods (Forest)' },
+    'Southern Reaches': { fill: '#8a7a5a', label: 'Southern Reaches' },
+    'South Sea Coast':  { fill: '#7a8a8e', label: 'South Sea Coast' }
+  };
+
+  const RS = { 'Food': { bg: '#2D8B2D', l: 'F' } };
+
+  const CASTLES = {
+    7:  { n: 'Minerva', t: 'home' },
+    52: { n: 'Mars',    t: 'home' },
+    59: { n: 'Diana',   t: 'home' },
+    88: { n: 'Apollo',  t: 'home' },
+    10: { n: 'Jupiter', t: 'neutral' },
+    22: { n: 'Ceres',   t: 'neutral' },
+    37: { n: 'Juno',    t: 'neutral' },
+    44: { n: 'Mercury', t: 'neutral' },
+    74: { n: 'Pluto',   t: 'neutral' },
+    81: { n: 'Neptune', t: 'neutral' }
+  };
+
+  // House colors for emblems
+  const HOUSE_COLORS = {
+    'Mars': '#6b1010',
+    'Minerva': '#3a5080',
+    'Apollo': '#8a6a10',
+    'Diana': '#2a4a20'
+  };
+
+  const D = [
+    { id:1,  c:0, r:0, rg:'Mountains',       rs:null,    sp:null },
+    { id:2,  c:1, r:0, rg:'Mountains',       rs:null,    sp:null },
+    { id:3,  c:2, r:0, rg:'Mountains',       rs:null,    sp:null },
+    { id:4,  c:3, r:0, rg:'North Woods',     rs:'Food',  sp:null },
+    { id:5,  c:4, r:0, rg:'North Woods',     rs:'Food',  sp:null },
+    { id:6,  c:5, r:0, rg:'Highlands',       rs:'Food',  sp:null },
+    { id:7,  c:6, r:0, rg:'Highlands',       rs:null,    sp:'Minerva Castle' },
+    { id:8,  c:7, r:0, rg:'Highlands',       rs:null,    sp:null },
+    { id:9,  c:0, r:1, rg:'Mountains',       rs:null,    sp:null },
+    { id:10, c:1, r:1, rg:'Mountains',       rs:null,    sp:'Jupiter Castle' },
+    { id:11, c:2, r:1, rg:'Mountains',       rs:null,    sp:'Cavern Entrance' },
+    { id:12, c:3, r:1, rg:'North Woods',     rs:'Food',  sp:null },
+    { id:13, c:4, r:1, rg:'North Woods',     rs:'Food',  sp:'Discovery Site' },
+    { id:14, c:5, r:1, rg:'Highlands',       rs:'Food',  sp:null },
+    { id:15, c:6, r:1, rg:'Highlands',       rs:null,    sp:null },
+    { id:16, c:7, r:1, rg:'Highlands',       rs:null,    sp:null },
+    { id:17, c:8, r:1, rg:'Postern Hills',   rs:'Food',  sp:null },
+    { id:18, c:0, r:2, rg:'Mountains',       rs:null,    sp:null },
+    { id:19, c:1, r:2, rg:'Mountains',       rs:null,    sp:null },
+    { id:20, c:2, r:2, rg:'Mountains',       rs:null,    sp:'Watchtower' },
+    { id:21, c:3, r:2, rg:'North Woods',     rs:'Food',  sp:null },
+    { id:22, c:4, r:2, rg:'North Woods',     rs:null,    sp:'Ceres Castle' },
+    { id:23, c:5, r:2, rg:'North Woods',     rs:'Food',  sp:null },
+    { id:24, c:6, r:2, rg:'Highlands',       rs:'Food',  sp:null },
+    { id:25, c:7, r:2, rg:'Highlands',       rs:null,    sp:'Discovery Site' },
+    { id:26, c:8, r:2, rg:'Highlands',       rs:null,    sp:'Watchtower' },
+    { id:27, c:9, r:2, rg:'Postern Hills',   rs:null,    sp:null },
+    { id:28, c:0,  r:3, rg:'Mountains',       rs:null,    sp:null },
+    { id:29, c:1,  r:3, rg:'Mountains',       rs:'Food',  sp:'Discovery Site' },
+    { id:30, c:2,  r:3, rg:'North Woods',     rs:'Food',  sp:null },
+    { id:31, c:3,  r:3, rg:'North Woods',     rs:'Food',  sp:'Discovery Site' },
+    { id:32, c:4,  r:3, rg:'Argos River',     rs:'Food',  sp:null },
+    { id:33, c:5,  r:3, rg:'Argos River',     rs:'Food',  sp:null },
+    { id:34, c:6,  r:3, rg:'Highlands',       rs:null,    sp:null },
+    { id:35, c:7,  r:3, rg:'Postern Hills',   rs:'Food',  sp:null },
+    { id:36, c:8,  r:3, rg:'Postern Hills',   rs:null,    sp:null },
+    { id:37, c:9,  r:3, rg:'Postern Hills',   rs:null,    sp:'Juno Castle' },
+    { id:38, c:10, r:3, rg:'Postern Hills',   rs:'Food',  sp:null },
+    { id:39, c:0,  r:4, rg:'Mountains',       rs:null,    sp:null },
+    { id:40, c:1,  r:4, rg:'Mountains',       rs:'Food',  sp:null },
+    { id:41, c:2,  r:4, rg:'North Woods',     rs:'Food',  sp:null },
+    { id:42, c:3,  r:4, rg:'Southern Reaches',rs:'Food',  sp:null },
+    { id:43, c:4,  r:4, rg:'Argos River',     rs:'Food',  sp:'Discovery Site' },
+    { id:44, c:5,  r:4, rg:'Argos River',     rs:null,    sp:'Mercury Castle' },
+    { id:45, c:6,  r:4, rg:'Greatwoods',      rs:null,    sp:null },
+    { id:46, c:7,  r:4, rg:'Greatwoods',      rs:'Food',  sp:null },
+    { id:47, c:8,  r:4, rg:'Greatwoods',      rs:'Food',  sp:null },
+    { id:48, c:9,  r:4, rg:'Greatwoods',      rs:'Food',  sp:null },
+    { id:49, c:10, r:4, rg:'Greatwoods',      rs:'Food',  sp:null },
+    { id:50, c:11, r:4, rg:'Greatwoods',      rs:'Food',  sp:null },
+    { id:51, c:0,  r:5, rg:'Mountains',       rs:null,    sp:null },
+    { id:52, c:1,  r:5, rg:'Southern Reaches',rs:null,    sp:'Mars Castle' },
+    { id:53, c:2,  r:5, rg:'Southern Reaches',rs:null,    sp:null },
+    { id:54, c:3,  r:5, rg:'Southern Reaches',rs:'Food',  sp:null },
+    { id:55, c:4,  r:5, rg:'Argos River',     rs:'Food',  sp:'Watchtower' },
+    { id:56, c:5,  r:5, rg:'Argos River',     rs:'Food',  sp:null },
+    { id:57, c:6,  r:5, rg:'Greatwoods',      rs:'Food',  sp:null },
+    { id:58, c:7,  r:5, rg:'Greatwoods',      rs:'Food',  sp:null },
+    { id:59, c:8,  r:5, rg:'Greatwoods',      rs:null,    sp:'Diana Castle' },
+    { id:60, c:9,  r:5, rg:'Greatwoods',      rs:'Food',  sp:null },
+    { id:61, c:10, r:5, rg:'Greatwoods',      rs:'Food',  sp:null },
+    { id:62, c:11, r:5, rg:'Greatwoods',      rs:null,    sp:null },
+    { id:63, c:0,  r:6, rg:'Southern Reaches',rs:null,    sp:null },
+    { id:64, c:1,  r:6, rg:'Southern Reaches',rs:'Food',  sp:null },
+    { id:65, c:2,  r:6, rg:'Southern Reaches',rs:'Food',  sp:null },
+    { id:66, c:3,  r:6, rg:'Argos River',     rs:'Food',  sp:null },
+    { id:67, c:4,  r:6, rg:'Argos River',     rs:'Food',  sp:null },
+    { id:68, c:5,  r:6, rg:'South Sea Coast', rs:'Food',  sp:null },
+    { id:69, c:6,  r:6, rg:'Greatwoods',      rs:null,    sp:null },
+    { id:70, c:7,  r:6, rg:'Greatwoods',      rs:'Food',  sp:null },
+    { id:71, c:8,  r:6, rg:'Greatwoods',      rs:'Food',  sp:'Discovery Site' },
+    { id:72, c:9,  r:6, rg:'Greatwoods',      rs:'Food',  sp:null },
+    { id:73, c:10, r:6, rg:'Greatwoods',      rs:'Food',  sp:'Cavern Entrance' },
+    { id:74, c:0, r:7, rg:'Southern Reaches',rs:null,    sp:'Pluto Castle' },
+    { id:75, c:1, r:7, rg:'Southern Reaches',rs:'Food',  sp:'Cavern Entrance' },
+    { id:76, c:2, r:7, rg:'Argos River',     rs:null,    sp:null },
+    { id:77, c:3, r:7, rg:'Argos River',     rs:'Food',  sp:null },
+    { id:78, c:4, r:7, rg:'South Sea Coast', rs:null,    sp:null },
+    { id:79, c:5, r:7, rg:'South Sea Coast', rs:'Food',  sp:null },
+    { id:80, c:6, r:7, rg:'South Sea Coast', rs:'Food',  sp:null },
+    { id:81, c:7, r:7, rg:'South Sea Coast', rs:null,    sp:'Neptune Castle' },
+    { id:82, c:8, r:7, rg:'Greatwoods',      rs:'Food',  sp:null },
+    { id:83, c:0, r:8, rg:'Southern Reaches',rs:'Food',  sp:'Discovery Site' },
+    { id:84, c:1, r:8, rg:'Southern Reaches',rs:'Food',  sp:null },
+    { id:85, c:2, r:8, rg:'Southern Reaches',rs:'Food',  sp:null },
+    { id:86, c:3, r:8, rg:'South Sea Coast', rs:'Food',  sp:null },
+    { id:87, c:4, r:8, rg:'South Sea Coast', rs:'Food',  sp:'Discovery Site' },
+    { id:88, c:5, r:8, rg:'South Sea Coast', rs:null,    sp:'Apollo Castle' },
+    { id:89, c:6, r:8, rg:'South Sea Coast', rs:'Food',  sp:null },
+    { id:90, c:7, r:8, rg:'South Sea Coast', rs:'Food',  sp:'Watchtower' }
+  ];
+
+  const RIVER = [
+    [32,33],[32,43],[32,44],[33,44],
+    [43,44],[43,55],[44,55],[44,56],
+    [55,56],[55,67],[66,67],
+    [66,76],[66,77],[67,77],[76,77]
+  ];
+
+  const REGION_LABELS = [
+    { name: 'MOUNTAINS',        c: 0.8,  r: 2.5, size: 14, rot: -15 },
+    { name: 'NORTH WOODS',      c: 3.5, r: 1.2, size: 14, rot: 0 },
+    { name: 'HIGHLANDS',        c: 7,   r: 1.0, size: 14, rot: 5 },
+    { name: 'POSTERN HILLS',    c: 9.2, r: 2.8, size: 11, rot: 10 },
+    { name: 'ARGOS RIVER',      c: 4.2, r: 5.8, size: 11, rot: -25 },
+    { name: 'GREATWOODS',       c: 8.5, r: 5.5, size: 16, rot: 0 },
+    { name: 'SOUTHERN REACHES', c: 1,   r: 7.2, size: 11, rot: 0 },
+    { name: 'SOUTH SEA COAST',  c: 5,   r: 7.8, size: 11, rot: 0 }
+  ];
+
+  // ---- SVG helpers ----
+  const NS = 'http://www.w3.org/2000/svg';
+  function el(tag, a) {
+    const e = document.createElementNS(NS, tag);
+    if (a) Object.entries(a).forEach(([k,v]) => e.setAttribute(k, v));
+    return e;
+  }
+
+  function hexPts(cx, cy, r) {
+    r = r || R;
+    const pts = [];
+    for (let i = 0; i < 6; i++) {
+      const ang = Math.PI / 180 * (60 * i - 30);
+      pts.push((cx + r * Math.cos(ang)).toFixed(1) + ',' + (cy + r * Math.sin(ang)).toFixed(1));
+    }
+    return pts.join(' ');
+  }
+
+  function center(c, r) {
+    return {
+      x: OX + c * W + (r % 2 === 1 ? W / 2 : 0),
+      y: OY + r * H * 0.75
+    };
+  }
+
+  function star(cx, cy, pts, or, ir) {
+    let d = '';
+    for (let i = 0; i < pts * 2; i++) {
+      const rad = i % 2 === 0 ? or : ir;
+      const a = (Math.PI / pts) * i - Math.PI / 2;
+      d += (i === 0 ? 'M' : 'L') + (cx + rad * Math.cos(a)).toFixed(1) + ',' + (cy + rad * Math.sin(a)).toFixed(1);
+    }
+    return d + 'Z';
+  }
+
+  // ---- Build position lookup ----
+  const pos = {};
+  D.forEach(h => {
+    const p = center(h.c, h.r);
+    pos[h.id] = { x: p.x, y: p.y, d: h };
+  });
+
+  // ---- SVG setup ----
+  const svg = document.getElementById('map-svg');
+  const gridW = 12 * W + W / 2 + OX + 60;
+  const svgW = gridW + 40;
+  const svgH = 8 * H * 0.75 + H / 2 + OY + 60;
+  svg.setAttribute('xmlns', NS);
+  svg.setAttribute('viewBox', '0 0 ' + Math.ceil(svgW) + ' ' + Math.ceil(svgH));
+  svg.setAttribute('width', Math.ceil(svgW));
+  svg.setAttribute('height', Math.ceil(svgH));
+  svg.style.maxWidth = '100%';
+  svg.style.height = 'auto';
+
+  // ---- Defs ----
+  const defs = el('defs');
+
+  // Parchment noise texture
+  const fTurb = el('filter', { id: 'paper', x: '0', y: '0', width: '100%', height: '100%' });
+  const turb = el('feTurbulence', { type: 'fractalNoise', baseFrequency: '0.04', numOctaves: '5', seed: '2', result: 'noise' });
+  fTurb.appendChild(turb);
+  const cTrans = el('feColorMatrix', { type: 'saturate', values: '0', in: 'noise', result: 'mono' });
+  fTurb.appendChild(cTrans);
+  const blend = el('feBlend', { in: 'SourceGraphic', in2: 'mono', mode: 'multiply' });
+  fTurb.appendChild(blend);
+  defs.appendChild(fTurb);
+
+  // Ink texture for terrain
+  const fInk = el('filter', { id: 'ink', x: '-5%', y: '-5%', width: '110%', height: '110%' });
+  const inkTurb = el('feTurbulence', { type: 'fractalNoise', baseFrequency: '0.03', numOctaves: '3', seed: '7', result: 'noise' });
+  fInk.appendChild(inkTurb);
+  const inkDisp = el('feDisplacementMap', { in: 'SourceGraphic', in2: 'noise', scale: '1.5', xChannelSelector: 'R', yChannelSelector: 'G' });
+  fInk.appendChild(inkDisp);
+  defs.appendChild(fInk);
+
+  // Castle symbol (more detailed)
+  const cs = el('symbol', { id: 'castle', viewBox: '0 0 24 22' });
+  // Base wall
+  cs.appendChild(el('rect', { x:'2', y:'10', width:'20', height:'12', fill:'currentColor', rx:'0' }));
+  // Left tower
+  cs.appendChild(el('rect', { x:'1', y:'4', width:'5', height:'18', fill:'currentColor' }));
+  // Right tower
+  cs.appendChild(el('rect', { x:'18', y:'4', width:'5', height:'18', fill:'currentColor' }));
+  // Center tower
+  cs.appendChild(el('rect', { x:'9', y:'0', width:'6', height:'22', fill:'currentColor' }));
+  // Battlements left
+  cs.appendChild(el('rect', { x:'0', y:'2', width:'2', height:'3', fill:'currentColor' }));
+  cs.appendChild(el('rect', { x:'5', y:'2', width:'2', height:'3', fill:'currentColor' }));
+  // Battlements right
+  cs.appendChild(el('rect', { x:'17', y:'2', width:'2', height:'3', fill:'currentColor' }));
+  cs.appendChild(el('rect', { x:'22', y:'2', width:'2', height:'3', fill:'currentColor' }));
+  // Battlements center
+  cs.appendChild(el('rect', { x:'8', y:'-2', width:'2', height:'3', fill:'currentColor' }));
+  cs.appendChild(el('rect', { x:'14', y:'-2', width:'2', height:'3', fill:'currentColor' }));
+  // Gate
+  cs.appendChild(el('rect', { x:'10', y:'15', width:'4', height:'7', rx:'2', ry:'2', fill:'currentColor', opacity:'0.3' }));
+  defs.appendChild(cs);
+
+  // Wheat sheaf symbol
+  const wheat = el('symbol', { id: 'wheat', viewBox: '0 0 18 18' });
+  // Stalks
+  wheat.innerHTML = '<g fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round">' +
+    '<path d="M9,17 L9,6"/>' +
+    '<path d="M6,17 L7.5,8"/>' +
+    '<path d="M12,17 L10.5,8"/>' +
+    // Grain heads
+    '<ellipse cx="9" cy="4" rx="1.8" ry="3.5" fill="currentColor" opacity="0.8"/>' +
+    '<ellipse cx="6.5" cy="5.5" rx="1.5" ry="3" fill="currentColor" opacity="0.7" transform="rotate(-15,6.5,5.5)"/>' +
+    '<ellipse cx="11.5" cy="5.5" rx="1.5" ry="3" fill="currentColor" opacity="0.7" transform="rotate(15,11.5,5.5)"/>' +
+    // Awns (hair-like projections)
+    '<line x1="9" y1="1" x2="9" y2="-1"/>' +
+    '<line x1="7" y1="3" x2="5.5" y2="1.5"/>' +
+    '<line x1="11" y1="3" x2="12.5" y2="1.5"/>' +
+    '</g>';
+  defs.appendChild(wheat);
+
+  // Clip path for hex
+  D.forEach(h => {
+    const p = center(h.c, h.r);
+    const clip = el('clipPath', { id: 'clip-' + h.id });
+    clip.appendChild(el('polygon', { points: hexPts(p.x, p.y, R + 1) }));
+    defs.appendChild(clip);
+  });
+
+  svg.appendChild(defs);
+
+  // ---- Layers ----
+  const lBg = el('g', { id: 'l-bg' });
+  const lTerrain = el('g', { id: 'l-terrain' });
+  const lRiver = el('g', { id: 'l-river' });
+  const lHex = el('g', { id: 'l-hex' });
+  const lOver = el('g', { id: 'l-over' });
+  const lRegion = el('g', { id: 'l-region' });
+  const lLabel = el('g', { id: 'l-label' });
+  const lLegend = el('g', { id: 'l-legend' });
+  svg.appendChild(lBg);
+  svg.appendChild(lTerrain);
+  svg.appendChild(lRiver);
+  svg.appendChild(lHex);
+  svg.appendChild(lOver);
+  svg.appendChild(lRegion);
+  svg.appendChild(lLabel);
+  svg.appendChild(lLegend);
+
+  // ---- Background (parchment) ----
+  // Base parchment
+  lBg.appendChild(el('rect', { x: 0, y: 0, width: svgW, height: svgH, fill: '#e8dcc4' }));
+  // Paper texture overlay
+  lBg.appendChild(el('rect', { x: 0, y: 0, width: svgW, height: svgH, fill: '#ede3d0', filter: 'url(#paper)', opacity: '0.6' }));
+  // Subtle vignette/aging at edges
+  const vig = el('rect', { x: 0, y: 0, width: svgW, height: svgH, fill: 'url(#vignette)' });
+  const vigGrad = el('radialGradient', { id: 'vignette', cx: '50%', cy: '50%', r: '70%' });
+  vigGrad.appendChild(el('stop', { offset: '0%', 'stop-color': 'transparent' }));
+  vigGrad.appendChild(el('stop', { offset: '85%', 'stop-color': 'transparent' }));
+  vigGrad.appendChild(el('stop', { offset: '100%', 'stop-color': 'rgba(60,40,20,0.15)' }));
+  defs.appendChild(vigGrad);
+  lBg.appendChild(vig);
+
+  // Decorative border
+  const bord = 8;
+  lBg.appendChild(el('rect', { x: bord, y: bord, width: svgW - bord*2, height: svgH - bord*2,
+    fill: 'none', stroke: '#4a3a2a', 'stroke-width': '2.5', rx: '3' }));
+  lBg.appendChild(el('rect', { x: bord+5, y: bord+5, width: svgW - bord*2-10, height: svgH - bord*2-10,
+    fill: 'none', stroke: '#8a7a5a', 'stroke-width': '0.8', rx: '2' }));
+
+  // ---- Terrain illustration functions ----
+
+  // Draw a mountain peak cluster
+  function drawMountain(g, cx, cy, rng) {
+    const sc = 0.7 + rng() * 0.5;
+    const peaks = 2 + Math.floor(rng() * 2);
+    for (let i = 0; i < peaks; i++) {
+      const px = cx - 12 * sc + i * 12 * sc + (rng() - 0.5) * 6;
+      const py = cy + 5;
+      const ph = 16 * sc + rng() * 10 * sc;
+      const pw = 10 * sc + rng() * 6 * sc;
+      // Mountain body
+      const path = el('path', {
+        d: 'M' + (px - pw) + ',' + py + ' L' + px + ',' + (py - ph) + ' L' + (px + pw) + ',' + py + 'Z',
+        fill: 'none', stroke: '#3a3028', 'stroke-width': (0.8 + rng() * 0.4).toFixed(1),
+        'stroke-linejoin': 'round', 'pointer-events': 'none'
+      });
+      g.appendChild(path);
+      // Snow cap / shading lines
+      const shadLines = 2 + Math.floor(rng() * 3);
+      for (let s = 0; s < shadLines; s++) {
+        const sy = py - ph * 0.3 - s * 3 * sc;
+        const sx1 = px - pw * (0.3 + s * 0.08);
+        const sx2 = px + pw * 0.1;
+        g.appendChild(el('line', {
+          x1: sx1.toFixed(1), y1: sy.toFixed(1),
+          x2: sx2.toFixed(1), y2: (sy + 1).toFixed(1),
+          stroke: '#3a3028', 'stroke-width': '0.5', opacity: (0.3 + rng() * 0.3).toFixed(2),
+          'pointer-events': 'none'
+        }));
+      }
+    }
+  }
+
+  // Draw trees (forest)
+  function drawTree(g, cx, cy, rng, type) {
+    const count = 3 + Math.floor(rng() * 4);
+    for (let i = 0; i < count; i++) {
+      const tx = cx + (rng() - 0.5) * 28;
+      const ty = cy + (rng() - 0.5) * 20;
+      const th = 8 + rng() * 8;
+      const tw = 4 + rng() * 3;
+
+      if (type === 'evergreen') {
+        // Triangular evergreen
+        const d = 'M' + tx + ',' + (ty - th) +
+                  ' L' + (tx - tw) + ',' + ty +
+                  ' L' + (tx + tw) + ',' + ty + 'Z';
+        g.appendChild(el('path', {
+          d: d, fill: '#2a3a20', 'fill-opacity': (0.4 + rng() * 0.3).toFixed(2),
+          stroke: '#2a3020', 'stroke-width': '0.6', 'pointer-events': 'none'
+        }));
+        // Trunk
+        g.appendChild(el('line', {
+          x1: tx.toFixed(1), y1: ty.toFixed(1),
+          x2: tx.toFixed(1), y2: (ty + 3).toFixed(1),
+          stroke: '#3a2a1a', 'stroke-width': '1', 'pointer-events': 'none'
+        }));
+      } else {
+        // Deciduous (round canopy)
+        g.appendChild(el('circle', {
+          cx: tx.toFixed(1), cy: (ty - th * 0.5).toFixed(1), r: (tw + 1).toFixed(1),
+          fill: '#3a4a2a', 'fill-opacity': (0.3 + rng() * 0.3).toFixed(2),
+          stroke: '#2a3020', 'stroke-width': '0.6', 'pointer-events': 'none'
+        }));
+        g.appendChild(el('line', {
+          x1: tx.toFixed(1), y1: (ty - th * 0.2).toFixed(1),
+          x2: tx.toFixed(1), y2: (ty + 3).toFixed(1),
+          stroke: '#3a2a1a', 'stroke-width': '0.8', 'pointer-events': 'none'
+        }));
+      }
+    }
+  }
+
+  // Draw hills
+  function drawHills(g, cx, cy, rng) {
+    const count = 2 + Math.floor(rng() * 2);
+    for (let i = 0; i < count; i++) {
+      const hx = cx + (rng() - 0.5) * 24;
+      const hy = cy + (rng() - 0.3) * 14;
+      const hw = 10 + rng() * 10;
+      const hh = 5 + rng() * 6;
+      const d = 'M' + (hx - hw) + ',' + hy +
+                ' Q' + hx + ',' + (hy - hh * 2) + ' ' + (hx + hw) + ',' + hy;
+      g.appendChild(el('path', {
+        d: d, fill: 'none', stroke: '#5a4a3a', 'stroke-width': (0.7 + rng() * 0.4).toFixed(1),
+        'pointer-events': 'none'
+      }));
+      // Shading strokes
+      const strokes = 2 + Math.floor(rng() * 2);
+      for (let s = 0; s < strokes; s++) {
+        const sx = hx - hw * 0.6 + s * hw * 0.3;
+        const sy1 = hy - hh * (0.3 + rng() * 0.3);
+        g.appendChild(el('line', {
+          x1: sx.toFixed(1), y1: sy1.toFixed(1),
+          x2: (sx + 2).toFixed(1), y2: (sy1 + hh * 0.5).toFixed(1),
+          stroke: '#5a4a3a', 'stroke-width': '0.4', opacity: '0.5', 'pointer-events': 'none'
+        }));
+      }
+    }
+  }
+
+  // Draw wave patterns (coast)
+  function drawWaves(g, cx, cy, rng) {
+    const count = 2 + Math.floor(rng() * 2);
+    for (let i = 0; i < count; i++) {
+      const wy = cy + 4 + i * 6 + (rng() - 0.5) * 4;
+      const wx = cx - 12 + (rng() - 0.5) * 8;
+      const ww = 10 + rng() * 8;
+      const d = 'M' + wx + ',' + wy +
+                ' c' + (ww * 0.3) + ',-3 ' + (ww * 0.6) + ',3 ' + ww + ',0';
+      g.appendChild(el('path', {
+        d: d, fill: 'none', stroke: '#5a7a8a', 'stroke-width': (0.5 + rng() * 0.3).toFixed(1),
+        opacity: (0.4 + rng() * 0.3).toFixed(2), 'pointer-events': 'none'
+      }));
+    }
+  }
+
+  // ---- Draw terrain illustrations per hex ----
+  Object.values(pos).forEach(p => {
+    const { x, y, d } = p;
+    const rng = seededRng(d.id * 137 + 42);
+    const castle = CASTLES[d.id];
+
+    // Create clipped group for terrain
+    const tg = el('g', { 'clip-path': 'url(#clip-' + d.id + ')', 'pointer-events': 'none' });
+
+    if (d.rg === 'Mountains' && !castle) {
+      drawMountain(tg, x, y, rng);
+    } else if (d.rg === 'North Woods' && !castle) {
+      drawTree(tg, x, y, rng, 'evergreen');
+    } else if (d.rg === 'Greatwoods' && !castle) {
+      drawTree(tg, x, y, rng, rng() > 0.5 ? 'evergreen' : 'deciduous');
+    } else if ((d.rg === 'Highlands' || d.rg === 'Postern Hills' || d.rg === 'Southern Reaches') && !castle) {
+      drawHills(tg, x, y, rng);
+    } else if (d.rg === 'South Sea Coast' && !castle) {
+      drawWaves(tg, x, y, rng);
+    }
+
+    lTerrain.appendChild(tg);
+  });
+
+  // ---- Draw river (hand-drawn style) ----
+  // Build river path through connected hexes
+  const riverHexIds = new Set();
+  RIVER.forEach(([a, b]) => { riverHexIds.add(a); riverHexIds.add(b); });
+
+  RIVER.forEach(([a, b]) => {
+    const pa = pos[a], pb = pos[b];
+    if (!pa || !pb) return;
+    const mx = (pa.x + pb.x) / 2;
+    const my = (pa.y + pb.y) / 2;
+    const rng = seededRng(a * 31 + b * 17);
+    const cx1 = mx + (rng() - 0.5) * 8;
+    const cy1 = my + (rng() - 0.5) * 8;
+    // Wavy river line
+    const d = 'M' + pa.x.toFixed(1) + ',' + pa.y.toFixed(1) +
+              ' Q' + cx1.toFixed(1) + ',' + cy1.toFixed(1) +
+              ' ' + pb.x.toFixed(1) + ',' + pb.y.toFixed(1);
+    lRiver.appendChild(el('path', {
+      d: d, fill: 'none', stroke: '#5a7a9a', 'stroke-width': '3.5',
+      'stroke-opacity': '0.35', 'stroke-linecap': 'round', 'pointer-events': 'none'
+    }));
+    lRiver.appendChild(el('path', {
+      d: d, fill: 'none', stroke: '#4a6a8a', 'stroke-width': '1.5',
+      'stroke-opacity': '0.5', 'stroke-linecap': 'round', 'stroke-dasharray': '6,4',
+      'pointer-events': 'none'
+    }));
+  });
+
+  // ---- Draw hex grid ----
+  Object.values(pos).forEach(p => {
+    const { x, y, d } = p;
+    const rc = RC[d.rg];
+    const castle = CASTLES[d.id];
+    const isFertile = d.rs === 'Food';
+    const isBarren = !d.rs && !castle;
+
+    // Subtle tinted fill
+    const poly = el('polygon', {
+      points: hexPts(x, y),
+      fill: rc.fill, 'fill-opacity': isBarren ? '0.06' : '0.10',
+      stroke: '#3a3028', 'stroke-width': castle ? '2.5' : '1',
+      'stroke-opacity': castle ? '0.7' : '0.4',
+      'data-hex': d.id
+    });
+    if (castle) {
+      poly.setAttribute('stroke', castle.t === 'home' ? '#5a4020' : '#4a4040');
+    }
+    poly.style.cursor = 'pointer';
+    poly.addEventListener('mouseenter', showTip);
+    poly.addEventListener('mousemove', showTip);
+    poly.addEventListener('mouseleave', hideTip);
+    lHex.appendChild(poly);
+
+    // Hex number — RED like reference
+    const nt = el('text', {
+      x: (x - R * 0.3).toFixed(1), y: (y - R * 0.52).toFixed(1),
+      'text-anchor': 'middle', 'dominant-baseline': 'middle',
+      'font-size': '10', 'font-weight': '700', fill: '#b03020',
+      'font-family': "'Cinzel', Georgia, serif",
+      'pointer-events': 'none', opacity: '0.85'
+    });
+    nt.textContent = d.id;
+    lLabel.appendChild(nt);
+
+    // Wheat sheaf for fertile hexes (not castles)
+    if (isFertile && !castle) {
+      lOver.appendChild(el('use', {
+        href: '#wheat', x: (x - 7).toFixed(1), y: (y - 6).toFixed(1),
+        width: '14', height: '14', color: '#6a5a20', opacity: '0.75',
+        'pointer-events': 'none'
+      }));
+    }
+
+    // Castle icon
+    if (castle) {
+      const ic = castle.t === 'home' ? '#3a2a1a' : '#4a4040';
+      lOver.appendChild(el('use', {
+        href: '#castle', x: (x - 12).toFixed(1), y: (y - 14).toFixed(1),
+        width: '24', height: '22', color: ic, 'pointer-events': 'none'
+      }));
+      // Castle name
+      const cl = el('text', {
+        x: x.toFixed(1), y: (y + 16).toFixed(1),
+        'text-anchor': 'middle', 'dominant-baseline': 'middle',
+        'font-size': '7', 'font-weight': '700', 'letter-spacing': '1',
+        fill: castle.t === 'home' ? '#3a2a1a' : '#4a4040',
+        'font-family': "'Cinzel', Georgia, serif", 'pointer-events': 'none'
+      });
+      cl.textContent = castle.n.toUpperCase();
+      lOver.appendChild(cl);
+
+      // House shield emblem for home castles
+      if (castle.t === 'home') {
+        const hc = HOUSE_COLORS[castle.n] || '#333';
+        // Small shield
+        const shieldD = 'M' + (x + 13) + ',' + (y - 14) +
+                        ' l6,0 l0,7 l-3,4 l-3,-4 Z';
+        lOver.appendChild(el('path', {
+          d: shieldD, fill: hc, stroke: '#2a2018', 'stroke-width': '0.8',
+          opacity: '0.8', 'pointer-events': 'none'
+        }));
+      }
+
+      if (castle.t === 'neutral') {
+        const vp = el('text', {
+          x: x.toFixed(1), y: (y + 23).toFixed(1),
+          'text-anchor': 'middle', 'dominant-baseline': 'middle',
+          'font-size': '6', fill: '#5a4a3a', 'font-style': 'italic',
+          'font-family': "'Cinzel', Georgia, serif", 'pointer-events': 'none'
+        });
+        vp.textContent = '4 VP';
+        lOver.appendChild(vp);
+      }
+    }
+
+    // Special markers (non-castle)
+    if (d.sp && !castle) {
+      const my = d.rs ? y + 14 : y + 6;
+      if (d.sp === 'Watchtower') {
+        // Tower silhouette
+        const tw = 5, th = 12;
+        const tPath = 'M' + (x-tw) + ',' + (my+th/2) +
+                      ' L' + (x-tw*0.6) + ',' + (my-th*0.2) +
+                      ' L' + (x-tw*0.8) + ',' + (my-th*0.3) +
+                      ' L' + (x-tw*0.4) + ',' + (my-th*0.5) +
+                      ' L' + x + ',' + (my-th/2) +
+                      ' L' + (x+tw*0.4) + ',' + (my-th*0.5) +
+                      ' L' + (x+tw*0.8) + ',' + (my-th*0.3) +
+                      ' L' + (x+tw*0.6) + ',' + (my-th*0.2) +
+                      ' L' + (x+tw) + ',' + (my+th/2) + 'Z';
+        lOver.appendChild(el('path', {
+          d: tPath, fill: '#2a2018', opacity: '0.8', 'pointer-events': 'none'
+        }));
+      }
+      if (d.sp === 'Cavern Entrance') {
+        // Dark cave mouth
+        lOver.appendChild(el('ellipse', {
+          cx: x.toFixed(1), cy: my.toFixed(1), rx: '7', ry: '5',
+          fill: '#1a1410', opacity: '0.6', 'pointer-events': 'none'
+        }));
+        lOver.appendChild(el('ellipse', {
+          cx: x.toFixed(1), cy: my.toFixed(1), rx: '7', ry: '5',
+          fill: 'none', stroke: '#3a3028', 'stroke-width': '1', opacity: '0.8',
+          'pointer-events': 'none'
+        }));
+      }
+      if (d.sp === 'Discovery Site') {
+        lOver.appendChild(el('path', {
+          d: star(x, my, 5, 8, 4),
+          fill: '#a08020', stroke: '#5a4a10', 'stroke-width': '0.8',
+          opacity: '0.7', 'pointer-events': 'none'
+        }));
+      }
+    }
+  });
+
+  // ---- Region labels (ink-wash style) ----
+  REGION_LABELS.forEach(rl => {
+    const p = center(rl.c, rl.r);
+    const t = el('text', {
+      x: p.x.toFixed(1), y: p.y.toFixed(1),
+      'text-anchor': 'middle', 'dominant-baseline': 'middle',
+      'font-size': rl.size, 'font-weight': '700',
+      fill: '#3a3028', opacity: '0.22',
+      'font-family': "'Cinzel', Georgia, serif",
+      'letter-spacing': (rl.size * 0.3).toFixed(0),
+      'pointer-events': 'none',
+      transform: 'rotate(' + (rl.rot || 0) + ',' + p.x.toFixed(1) + ',' + p.y.toFixed(1) + ')'
+    });
+    t.textContent = rl.name;
+    lRegion.appendChild(t);
+  });
+
+  // ---- Compass Rose ----
+  const compX = OX + 0.3 * W;
+  const compY = svgH - 55;
+  const compR = 22;
+  // Compass circle
+  lLabel.appendChild(el('circle', {
+    cx: compX, cy: compY, r: compR + 4,
+    fill: 'none', stroke: '#5a4a3a', 'stroke-width': '1.5', opacity: '0.6'
+  }));
+  lLabel.appendChild(el('circle', {
+    cx: compX, cy: compY, r: compR + 1,
+    fill: 'none', stroke: '#5a4a3a', 'stroke-width': '0.5', opacity: '0.4'
+  }));
+  // North point (filled)
+  const nPath = 'M' + compX + ',' + (compY - compR) +
+                ' L' + (compX - 5) + ',' + (compY - 2) +
+                ' L' + compX + ',' + (compY - 6) +
+                ' L' + (compX + 5) + ',' + (compY - 2) + 'Z';
+  lLabel.appendChild(el('path', { d: nPath, fill: '#3a2a1a', opacity: '0.8' }));
+  // South point (outline)
+  const sPath = 'M' + compX + ',' + (compY + compR) +
+                ' L' + (compX - 5) + ',' + (compY + 2) +
+                ' L' + compX + ',' + (compY + 6) +
+                ' L' + (compX + 5) + ',' + (compY + 2) + 'Z';
+  lLabel.appendChild(el('path', { d: sPath, fill: 'none', stroke: '#3a2a1a', 'stroke-width': '0.8', opacity: '0.6' }));
+  // East/West points
+  const ePath = 'M' + (compX + compR) + ',' + compY +
+                ' L' + (compX + 2) + ',' + (compY - 4) +
+                ' L' + (compX + 6) + ',' + compY +
+                ' L' + (compX + 2) + ',' + (compY + 4) + 'Z';
+  lLabel.appendChild(el('path', { d: ePath, fill: 'none', stroke: '#3a2a1a', 'stroke-width': '0.8', opacity: '0.6' }));
+  const wPath = 'M' + (compX - compR) + ',' + compY +
+                ' L' + (compX - 2) + ',' + (compY - 4) +
+                ' L' + (compX - 6) + ',' + compY +
+                ' L' + (compX - 2) + ',' + (compY + 4) + 'Z';
+  lLabel.appendChild(el('path', { d: wPath, fill: 'none', stroke: '#3a2a1a', 'stroke-width': '0.8', opacity: '0.6' }));
+  // Direction letters
+  ['N','S','E','W'].forEach((dir, i) => {
+    const dx = [0, 0, compR + 10, -compR - 10][i];
+    const dy = [-compR - 10, compR + 12, 2, 2][i];
+    const lt = el('text', {
+      x: compX + dx, y: compY + dy,
+      'text-anchor': 'middle', 'dominant-baseline': 'middle',
+      'font-size': '9', 'font-weight': '700', fill: '#3a2a1a',
+      'font-family': "'Cinzel', Georgia, serif", opacity: '0.7'
+    });
+    lt.textContent = dir;
+    lLabel.appendChild(lt);
+  });
+
+  // ---- Title Cartouche ----
+  const titleX = svgW - 200;
+  const titleY = 35;
+  // Decorative line
+  lLabel.appendChild(el('line', {
+    x1: titleX - 60, y1: titleY + 28, x2: titleX + 130, y2: titleY + 28,
+    stroke: '#5a4a3a', 'stroke-width': '0.8', opacity: '0.5'
+  }));
+  const t1 = el('text', {
+    x: titleX + 35, y: titleY, 'text-anchor': 'middle',
+    'font-size': '22', 'font-weight': '900', fill: '#3a1a0a',
+    'font-family': "'Cinzel Decorative', 'Cinzel', Georgia, serif",
+    'letter-spacing': '3'
+  });
+  t1.textContent = 'RED RISING';
+  lLabel.appendChild(t1);
+  const t2 = el('text', {
+    x: titleX + 35, y: titleY + 20, 'text-anchor': 'middle',
+    'font-size': '13', 'font-weight': '700', fill: '#5a4a3a',
+    'font-family': "'Cinzel', Georgia, serif",
+    'letter-spacing': '4'
+  });
+  t2.textContent = 'THE INSTITUTE';
+  lLabel.appendChild(t2);
+  lLabel.appendChild(el('line', {
+    x1: titleX - 60, y1: titleY - 12, x2: titleX + 130, y2: titleY - 12,
+    stroke: '#5a4a3a', 'stroke-width': '0.8', opacity: '0.5'
+  }));
+
+  // ---- Legend (overlaid, bottom-right) ----
+  const legW = 250, legH = 360;
+  const legX = svgW - legW - 22;
+  const legY = svgH - legH - 22;
+
+  // Legend background
+  lLegend.appendChild(el('rect', {
+    x: legX, y: legY, width: legW, height: legH,
+    fill: '#e8dcc4', 'fill-opacity': '0.92', stroke: '#5a4a3a', 'stroke-width': '1.2', rx: '3'
+  }));
+
+  let ly = legY + 18;
+  const llx = legX + 14;
+
+  function legSec(text) {
+    const t = el('text', { x: llx, y: ly, 'font-size': '9', 'font-weight': '700', fill: '#3a2a1a',
+      'font-family': "'Cinzel', Georgia, serif", 'letter-spacing': '2' });
+    t.textContent = text;
+    lLegend.appendChild(t);
+    ly += 14;
+  }
+
+  function legItem(label, drawFn) {
+    drawFn(llx + 8, ly - 3);
+    const t = el('text', { x: llx + 22, y: ly, 'font-size': '9', fill: '#3a3028',
+      'font-family': "'Cinzel', Georgia, serif", 'dominant-baseline': 'middle' });
+    t.textContent = label;
+    lLegend.appendChild(t);
+    ly += 15;
+  }
+
+  legSec('TERRAIN');
+  legItem('Mountains (Difficult)', (x, y) => {
+    lLegend.appendChild(el('path', {
+      d: 'M'+(x-6)+','+(y+4)+' L'+x+','+(y-6)+' L'+(x+6)+','+(y+4)+'Z',
+      fill: 'none', stroke: '#3a3028', 'stroke-width': '0.8'
+    }));
+  });
+  legItem('Forest (Cover: +1)', (x, y) => {
+    lLegend.appendChild(el('path', {
+      d: 'M'+x+','+(y-6)+' L'+(x-5)+','+(y+4)+' L'+(x+5)+','+(y+4)+'Z',
+      fill: '#2a3a20', 'fill-opacity': '0.5', stroke: '#2a3020', 'stroke-width': '0.6'
+    }));
+  });
+  legItem('Hills', (x, y) => {
+    lLegend.appendChild(el('path', {
+      d: 'M'+(x-6)+','+(y+2)+' Q'+x+','+(y-6)+' '+(x+6)+','+(y+2),
+      fill: 'none', stroke: '#5a4a3a', 'stroke-width': '0.8'
+    }));
+  });
+  legItem('Coast / Water', (x, y) => {
+    lLegend.appendChild(el('path', {
+      d: 'M'+(x-6)+','+y+' c3,-3 6,3 12,0',
+      fill: 'none', stroke: '#5a7a8a', 'stroke-width': '0.8'
+    }));
+  });
+  legItem('River (Fast Travel)', (x, y) => {
+    lLegend.appendChild(el('line', {
+      x1: x-5, y1: y, x2: x+7, y2: y,
+      stroke: '#4a6a8a', 'stroke-width': '2.5', 'stroke-opacity': '0.5', 'stroke-linecap': 'round'
+    }));
+  });
+
+  ly += 4;
+  legSec('RESOURCES');
+  legItem('Fertile (1 Food)', (x, y) => {
+    lLegend.appendChild(el('use', {
+      href: '#wheat', x: x-6, y: y-7, width: '12', height: '12',
+      color: '#6a5a20', opacity: '0.75'
+    }));
+  });
+  legItem('Barren (no food)', (x, y) => {
+    lLegend.appendChild(el('rect', {
+      x: x-5, y: y-4, width: '10', height: '8', rx: '1',
+      fill: '#8a8070', 'fill-opacity': '0.2', stroke: '#5a4a3a', 'stroke-width': '0.5'
+    }));
+  });
+
+  ly += 4;
+  legSec('LANDMARKS');
+  legItem('Home Castle (0 VP)', (x, y) => {
+    lLegend.appendChild(el('use', {
+      href: '#castle', x: x-7, y: y-7, width: '14', height: '12', color: '#3a2a1a'
+    }));
+  });
+  legItem('Neutral Castle (4 VP)', (x, y) => {
+    lLegend.appendChild(el('use', {
+      href: '#castle', x: x-7, y: y-7, width: '14', height: '12', color: '#6a6060'
+    }));
+  });
+  legItem('Watchtower (2-hex scout)', (x, y) => {
+    lLegend.appendChild(el('path', {
+      d: 'M'+(x-3)+','+(y+4)+' L'+(x-1)+','+(y-2)+' L'+(x-2.5)+','+(y-3)+' L'+(x-1)+','+(y-5)+
+         ' L'+x+','+(y-6)+' L'+(x+1)+','+(y-5)+' L'+(x+2.5)+','+(y-3)+' L'+(x+1)+','+(y-2)+
+         ' L'+(x+3)+','+(y+4)+'Z',
+      fill: '#2a2018', opacity: '0.8'
+    }));
+  });
+  legItem('Cavern Entrance', (x, y) => {
+    lLegend.appendChild(el('ellipse', {
+      cx: x, cy: y, rx: '5', ry: '3.5', fill: '#1a1410', opacity: '0.5'
+    }));
+    lLegend.appendChild(el('ellipse', {
+      cx: x, cy: y, rx: '5', ry: '3.5', fill: 'none', stroke: '#3a3028', 'stroke-width': '0.8'
+    }));
+  });
+  legItem('Discovery Site', (x, y) => {
+    lLegend.appendChild(el('path', {
+      d: star(x, y, 5, 6, 3), fill: '#a08020', stroke: '#5a4a10', 'stroke-width': '0.6', opacity: '0.7'
+    }));
+  });
+
+  ly += 6;
+  legSec('HOUSES');
+  [
+    { n: 'Mars', sub: 'The Wolves', clr: '#6b1010' },
+    { n: 'Minerva', sub: 'The Owls', clr: '#3a5080' },
+    { n: 'Apollo', sub: 'The Suns', clr: '#8a6a10' },
+    { n: 'Diana', sub: 'The Shadows', clr: '#2a4a20' }
+  ].forEach(h => {
+    // Shield
+    const sx = llx + 8;
+    const sy = ly - 3;
+    const sd = 'M'+(sx-4)+','+(sy-5)+' l8,0 l0,5.5 l-4,4 l-4,-4 Z';
+    lLegend.appendChild(el('path', { d: sd, fill: h.clr, stroke: '#2a2018', 'stroke-width': '0.6' }));
+    const t = el('text', { x: llx + 22, y: ly, 'font-size': '9', fill: '#3a3028',
+      'font-family': "'Cinzel', Georgia, serif", 'dominant-baseline': 'middle' });
+    t.textContent = h.n + ' \u2014 ' + h.sub;
+    lLegend.appendChild(t);
+    ly += 15;
+  });
+
+  // Stats at bottom
+  ly += 4;
+  const stats = el('text', { x: llx, y: ly, 'font-size': '7.5', fill: '#6a5a4a',
+    'font-family': "'Cinzel', Georgia, serif", 'font-style': 'italic' });
+  stats.textContent = '90 hexes \u2022 54 fertile \u2022 26 barren \u2022 10 castles';
+  lLegend.appendChild(stats);
+
+  // ---- Tooltip ----
+  const tip = document.getElementById('tooltip');
+
+  function showTip(e) {
+    const id = parseInt(e.target.getAttribute('data-hex'));
+    const p = pos[id];
+    if (!p) return;
+    const d = p.d;
+    const castle = CASTLES[id];
+    const isFertile = d.rs === 'Food';
+    let h = '<div class="tip-title">Hex ' + d.id + '</div>';
+    h += '<div class="tip-region">' + d.rg + '</div>';
+    if (castle) {
+      h += '<div style="margin-top:2px">';
+      if (castle.t === 'home') h += '<strong style="color:#d4a04a">' + castle.n + ' Castle</strong> (Home, 0 VP)';
+      else h += '<strong style="color:#b0a080">' + castle.n + ' Castle</strong> (Neutral, 4 VP)';
+      h += '<br><span style="font-size:11px">Produces: 1 Food when gathered</span>';
+      if (castle.t === 'neutral') h += '<br><span style="font-size:11px">Hidden garrison (strength 2\u20134)</span>';
+      h += '</div>';
+    } else if (isFertile) {
+      h += '<div>Production: <strong style="color:#a09030">1 Food</strong> (Fertile)</div>';
+    } else {
+      h += '<div style="color:#7a6a5a">Barren \u2014 no food production</div>';
+    }
+    if (d.sp && !castle) {
+      h += '<div class="tip-special">' + d.sp;
+      if (d.sp === 'Watchtower') h += ' (Alert units here scout 2 hexes)';
+      if (d.sp === 'Cavern Entrance') h += ' (network: 11\u201473\u201475)';
+      if (d.sp === 'Discovery Site') h += ' (1 Equipment Card, first visit)';
+      h += '</div>';
+    }
+    if (d.rg === 'Mountains' && !castle) h += '<div style="font-size:10px;color:#7a6a5a;margin-top:2px">Difficult terrain: full turn to enter, arrive At Ease</div>';
+    if ((d.rg === 'North Woods' || d.rg === 'Greatwoods') && !castle) h += '<div style="font-size:10px;color:#7a6a5a;margin-top:2px">Forest: At Ease units fight at +1 (cover)</div>';
+    if (d.rg === 'Argos River') h += '<div style="font-size:10px;color:#7a6a5a;margin-top:2px">Fast travel between connected river hexes</div>';
+
+    tip.innerHTML = h;
+    tip.classList.add('visible');
+    const cr = document.getElementById('map-container').getBoundingClientRect();
+    const sr = svg.getBoundingClientRect();
+    const sc = sr.width / svgW;
+    let tx = p.x * sc + sr.left - cr.left + 20;
+    let ty = p.y * sc + sr.top - cr.top - 20;
+    if (tx + tip.offsetWidth > cr.width) tx -= tip.offsetWidth + 40;
+    if (ty + tip.offsetHeight > cr.height) ty = cr.height - tip.offsetHeight - 5;
+    if (ty < 0) ty = 5;
+    tip.style.left = tx + 'px';
+    tip.style.top = ty + 'px';
+  }
+
+  function hideTip() { tip.classList.remove('visible'); }
+
+})();
+</script>
+</body>
+</html>

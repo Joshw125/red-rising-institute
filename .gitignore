@@ -1,0 +1,31 @@
+# Dependencies and build output
+node_modules/
+dist/
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# Local env files (production env files like .env.production are committed
+# because Vite bundles them at build time)
+.env
+.env.local
+*.local
+
+# Claude Code local settings
+.claude/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Reference assets too bulky for repo (kept locally)
+*.pdf
+map.jpg
+mapnohex.jpg
+marscards.jpg
+
+# Stray shell-glob directory (artifact from `mkdir {docs,...}` on a non-bash shell)
+{docs,mechanics,houses,cards,map,reference}/
