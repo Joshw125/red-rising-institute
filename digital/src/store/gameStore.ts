@@ -415,32 +415,55 @@ export const useGameStore = create<GameStore>()(
         };
         s.proctorDiscard = [];
         s.currentProctorId = null;
-        // Demo placement spreads units so each fertile gathering hex has its own
-        // soldier (gathering is capped at 1/hex). Each house has: 1 castle defender,
-        // 5-6 gatherers, 1-2 mobile/forward, 1 special (forward), 1 flag (castle).
-        // Mars and Diana have forward units in Argos River (47 & 48 adjacent) so
-        // combat can be tested without cross-map marches.
+        // Starting placement — all units in own home territory.
+        // Each house: flag-bearer + 1 defender at castle, 5-6 gatherers spread
+        // across home-region fertile hexes, 1-2 perimeter, special at castle.
         // Index order: 8 regulars, then flag-bearer, then special.
         const placement: Record<HouseId, number[]> = {
           Mars: [
-            45,         // r0: castle defender
-            35, 37, 56, // r1-r3: 3 gatherers in Southern Reaches fertile
-            57, 73,     // r4-r5: 2 more gatherers
-            46, 55,     // r6-r7: forward defenders (barren)
+            45,         // castle defender
+            35, 37,     // Southern Reaches fertile gatherers
+            56, 57, 73, // more SR fertile gatherers
+            46,         // perimeter (barren)
+            55,         // perimeter (barren)
             45,         // flag-bearer: castle
-            47,         // special (Howler): forward Argos
+            45,         // Howler (special): castle
           ],
           Diana: [
-            52,         // r0: castle defender
-            41, 43, 51, // r1-r3: 3 gatherers in Greatwoods fertile
-            53, 62,     // r4-r5: 2 more gatherers
-            63, 50,     // r6-r7: forward (Greatwoods)
+            52,         // castle defender
+            41, 43,     // Greatwoods fertile gatherers
+            51, 53, 62, // more Greatwoods fertile gatherers
+            63,         // perimeter
+            50,         // perimeter (Greatwoods)
             52,         // flag-bearer: castle
-            48,         // special (Shadow): forward Argos
+            52,         // Shadow (special): castle
           ],
-          Minerva: [6, 11, 20, 21, 13, 12, 5, 22, 6, 30],
-          Apollo:  [75, 74, 76, 77, 68, 69, 71, 73, 75, 70],
+          Minerva: [
+            6,          // castle defender
+            11, 20, 21, // Highlands fertile gatherers
+            13, 12,     // Highlands defenders
+            5, 22,      // perimeter
+            6,          // flag-bearer: castle
+            6,          // Tactician (special): castle
+          ],
+          Apollo: [
+            75,         // castle defender
+            74, 76, 77, // South Sea Coast fertile gatherers
+            68, 69, 71, // more SSC fertile gatherers
+            73,         // perimeter
+            75,         // flag-bearer: castle
+            75,         // Archer (special): castle
+          ],
         };
+        // Treat home castles of NON-playing houses as neutral with garrisons.
+        // Default 6 always-neutral garrisons + any home castle for a missing house.
+        const playingHouseSet = new Set(houses);
+        const homeCastlesByHouse: Record<HouseId, number> = { Mars: 45, Minerva: 6, Apollo: 75, Diana: 52 };
+        for (const [h, hex] of Object.entries(homeCastlesByHouse)) {
+          if (!playingHouseSet.has(h as HouseId) && s.garrisons[hex] == null) {
+            s.garrisons[hex] = 3; // mid-strength garrison for unmanned home
+          }
+        }
         houses.forEach((h) => {
           const hexes = placement[h];
           for (let i = 0; i < 8; i++) {

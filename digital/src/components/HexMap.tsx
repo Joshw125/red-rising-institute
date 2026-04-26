@@ -348,16 +348,18 @@ export function HexMap() {
           })}
         </g>
 
-        {/* Castle markers */}
+        {/* Castle markers — color = playing-house home; otherwise neutral.
+            Home castles for non-playing houses (e.g. Apollo in a Mars-vs-Diana game)
+            render as neutral and are mechanically neutral (have garrisons). */}
         <g pointerEvents="none">
           {HEXES.filter((h) => h.special?.kind === 'Castle').map((h) => {
             const p = positions[h.id];
             const rr = CALIBRATION.r * CALIBRATION.rs[h.r];
             const castle = CASTLE_BY_HEX[h.id];
-            const fill =
-              castle?.type === 'home' && castle.house
-                ? HOUSES[castle.house].color
-                : '#a89a73';
+            const playingHouses = new Set(useGameStore.getState().players.map((p) => p.house));
+            const isPlayingHome =
+              castle?.type === 'home' && castle.house && playingHouses.has(castle.house);
+            const fill = isPlayingHome ? HOUSES[castle!.house!].color : '#a89a73';
             return (
               <g key={`castle-${h.id}`}>
                 <circle cx={p.x} cy={p.y} r={rr * 0.32} fill={fill} stroke="#1a1a1a" strokeWidth={2} />

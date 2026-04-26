@@ -149,12 +149,12 @@ function makeUnit(house: HouseId, kind: Unit['kind'], hexId: number, idx: number
 }
 
 function buildInitialGameState(houseOrder: HouseId[]): GameState {
-  // Mirror initDemoGame from src/store/gameStore.ts but parameterized by N players.
+  // Mirrors initDemoGame in src/store/gameStore.ts. All units in own territory.
   const placement: Record<HouseId, number[]> = {
-    Mars: [45, 35, 37, 56, 57, 73, 46, 55, 45, 47],
-    Diana: [52, 41, 43, 51, 53, 62, 63, 50, 52, 48],
-    Minerva: [6, 11, 20, 21, 13, 12, 5, 22, 6, 30],
-    Apollo: [75, 74, 76, 77, 68, 69, 71, 73, 75, 70],
+    Mars:    [45, 35, 37, 56, 57, 73, 46, 55, 45, 45],
+    Diana:   [52, 41, 43, 51, 53, 62, 63, 50, 52, 52],
+    Minerva: [6, 11, 20, 21, 13, 12, 5, 22, 6, 6],
+    Apollo:  [75, 74, 76, 77, 68, 69, 71, 73, 75, 75],
   };
 
   const shuffledObjectives = [...OBJECTIVES].sort(() => Math.random() - 0.5);
@@ -210,6 +210,15 @@ function buildInitialGameState(houseOrder: HouseId[]): GameState {
     currentProctorId: null,
     log: [`Multiplayer game started: ${houseOrder.join(' vs ')}.`],
   };
+
+  // Treat home castles of NON-playing houses as neutral with garrisons.
+  const playingHouseSet = new Set(houseOrder);
+  const homeCastlesByHouse: Record<HouseId, number> = { Mars: 45, Minerva: 6, Apollo: 75, Diana: 52 };
+  for (const [h, hex] of Object.entries(homeCastlesByHouse)) {
+    if (!playingHouseSet.has(h as HouseId) && state.garrisons[hex] == null) {
+      state.garrisons[hex] = 3;
+    }
+  }
 
   // Place units per house
   for (const h of houseOrder) {
