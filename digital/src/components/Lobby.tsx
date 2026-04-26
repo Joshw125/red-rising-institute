@@ -122,6 +122,14 @@ export function Lobby() {
   const allReady = mp.room.players.every((p) => p.isReady);
   const canStart = isHost && mp.room.players.length >= 2 && allHaveHouse && allReady;
 
+  // Compute exactly what's blocking the start, for a clear UX message.
+  const blockers: string[] = [];
+  if (mp.room.players.length < 2) blockers.push(`Need at least 2 players (currently ${mp.room.players.length})`);
+  for (const p of mp.room.players) {
+    if (!p.house) blockers.push(`${p.name} hasn't picked a House`);
+    else if (!p.isReady) blockers.push(`${p.name} hasn't marked Ready`);
+  }
+
   return (
     <div className="min-h-screen bg-stone-900 text-parchment flex items-center justify-center p-6">
       <div className="max-w-2xl w-full bg-stone-950/60 border border-stone-700 rounded p-6 space-y-4">
@@ -237,6 +245,20 @@ export function Lobby() {
             </button>
           )}
         </div>
+
+        {/* Show what's blocking the start, so players know what to do */}
+        {isHost && blockers.length > 0 && (
+          <div className="text-xs text-stone-400 border-t border-stone-700 pt-3 space-y-1">
+            <div className="font-display tracking-wider text-stone-500 mb-1">
+              CAN'T START YET — WAITING FOR:
+            </div>
+            <ul className="space-y-0.5 ml-2">
+              {blockers.map((b, i) => (
+                <li key={i} className="text-amber-300">• {b}</li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {!isHost && (
           <p className="text-xs text-stone-500 text-center">

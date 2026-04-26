@@ -70,6 +70,46 @@ function broadcastToRoom(roomCode: string, msg: ServerMessage, excludeId?: strin
   }
 }
 
+// Game-state broadcast: filters the state per-recipient so each player only
+// sees what they should (their own cards/objective, no peeking at opponents').
+function broadcastGameStateUpdate(roomCode: string, action: any, fromPlayerId: string): void {
+  const room = rooms.get(roomCode);
+  if (!room || !room.gameState) return;
+  const state = room.gameState as GameState;
+  for (const p of room.players) {
+    if (!p.isConnected) continue;
+    const conn = players.get(p.id);
+    if (!conn) continue;
+    const filtered = filterStateForHouse(state, p.house ?? null);
+    send(conn.ws, {
+      type: 'GAME_STATE_UPDATE',
+      state: filtered,
+      action,
+      fromPlayerId,
+    });
+  }
+}
+
+function sendGameSnapshot(playerId: string, room: Room): void {
+  const conn = players.get(playerId);
+  if (!conn || !room.gameState) return;
+  const me = room.players.find((p) => p.id === playerId);
+  const filtered = filterStateForHouse(room.gameState as GameState, me?.house ?? null);
+  send(conn.ws, { type: 'STATE_SNAPSHOT', snapshot: filtered });
+}
+
+function sendInitialGameState(room: Room, playerHouseMap: Record<string, HouseId>): void {
+  if (!room.gameState) return;
+  const state = room.gameState as GameState;
+  for (const p of room.players) {
+    if (!p.isConnected) continue;
+    const conn = players.get(p.id);
+    if (!conn) continue;
+    const filtered = filterStateForHouse(state, p.house ?? null);
+    send(conn.ws, { type: 'GAME_STARTED', gameState: filtered, playerHouseMap });
+  }
+}
+
 function getRoomForPlayer(playerId: string): Room | null {
   const conn = players.get(playerId);
   if (!conn?.roomCode) return null;
@@ -92,6 +132,7 @@ import { PROCTORS_BY_ACT, PROCTOR_BY_ID } from '../../shared/data/proctors';
 import { OBJECTIVES } from '../../shared/data/objectives';
 import { HOUSES } from '../../shared/data/houses';
 import { buildDeck } from '../../shared/data/tactics';
+import { filterStateForHouse } from '../../shared/engine/filterState';
 import type { GameState, Unit } from '../../shared/types/index';
 
 enableMapSet();
@@ -560,7 +601,7 @@ function handleMessage(conn: ConnectedPlayer, msg: ClientMessage): void {
       for (const p of room.players) {
         if (p.house) playerHouseMap[p.id] = p.house;
       }
-      broadcastToRoom(room.code, { type: 'GAME_STARTED', gameState, playerHouseMap });
+      sendInitialGameState(room, playerHouseMap);
       console.log(`[room ${room.code}] game started: ${houseOrder.join(' vs ')}`);
       break;
     }
@@ -573,17 +614,12 @@ function handleMessage(conn: ConnectedPlayer, msg: ClientMessage): void {
         me?.house ?? null
       );
       room.gameState = newState;
-      broadcastToRoom(room.code, {
-        type: 'GAME_STATE_UPDATE',
-        state: newState,
-        action: msg.action,
-        fromPlayerId: conn.id,
-      });
+      broadcastGameStateUpdate(room.code, msg.action, conn.id);
       break;
     }
     case 'REQUEST_RESYNC': {
       if (!room?.gameState) break;
-      send(conn.ws, { type: 'STATE_SNAPSHOT', snapshot: room.gameState });
+      sendGameSnapshot(conn.id, room);
       break;
     }
     case 'CHAT': {
