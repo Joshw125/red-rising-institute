@@ -1,13 +1,16 @@
 import { useGameStore } from '@/store/gameStore';
+import { useMultiplayerStore } from '@/store/multiplayer';
 import { OBJECTIVE_BY_ID } from '@shared/data/objectives';
 import { HOUSES } from '@shared/data/houses';
-import { currentPlayerHouse } from '@shared/engine/orders';
+import { localPlayerHouse } from '@shared/engine/orders';
 
-// Shows the CURRENT player's secret objective.
-// In hot-seat play this is fine — only the active player should be looking at the screen.
+// Shows the LOCAL player's secret objective (their own card).
+// In multiplayer mode each player only sees their own.
+// In hot-seat mode it falls back to whoever's turn it is.
 export function ObjectivePanel() {
   const state = useGameStore();
-  const myHouse = currentPlayerHouse(state);
+  const mpHouse = useMultiplayerStore((s) => s.myHouse);
+  const myHouse = localPlayerHouse(state, mpHouse);
   if (!myHouse) return null;
   const player = state.players.find((p) => p.house === myHouse);
   if (!player?.objectiveId) return null;

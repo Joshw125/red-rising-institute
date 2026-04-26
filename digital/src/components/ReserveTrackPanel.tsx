@@ -1,12 +1,16 @@
 import clsx from 'clsx';
 import { useGameStore } from '@/store/gameStore';
+import { useMultiplayerStore } from '@/store/multiplayer';
 import { HOUSES } from '@shared/data/houses';
-import { currentPlayerHouse } from '@shared/engine/orders';
+import { currentPlayerHouse, localPlayerHouse } from '@shared/engine/orders';
 
 export function ReserveTrackPanel() {
   const state = useGameStore();
+  const mpHouse = useMultiplayerStore((s) => s.myHouse);
   const { reserveGroups, deployMode } = state;
-  const myHouse = currentPlayerHouse(state);
+  const myHouse = localPlayerHouse(state, mpHouse);
+  const turnHouse = currentPlayerHouse(state);
+  const isMyTurn = myHouse === turnHouse;
 
   const myGroups = Object.values(reserveGroups).filter((g) => g.house === myHouse);
 
@@ -50,7 +54,7 @@ export function ReserveTrackPanel() {
                     <span>{g.unitIds.length} unit{g.unitIds.length === 1 ? '' : 's'}</span>
                     <span className="text-stone-500"> · range {range}</span>
                   </div>
-                  {!deployMode && (
+                  {!deployMode && isMyTurn && (
                     <button
                       onClick={() => state.startDeploy(g.id)}
                       className="text-xs px-2 py-0.5 rounded bg-cyan-700 hover:bg-cyan-600 border border-cyan-500 text-stone-100"

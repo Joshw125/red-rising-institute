@@ -131,6 +131,10 @@ export const useMultiplayerStore = create<MultiplayerState>((set, get) => ({
         set({ playerHouseMap: msg.playerHouseMap });
         const myId = get().playerId;
         if (myId) set({ myHouse: msg.playerHouseMap[myId] ?? null });
+        // Critical: flip room.status to 'playing' so App routing leaves the Lobby view.
+        // The server has set room.status = 'playing' but doesn't send a ROOM_UPDATE
+        // separately — the GAME_STARTED message implies the transition.
+        set((s) => ({ room: s.room ? { ...s.room, status: 'playing' as const } : null }));
         if (_onGameStateUpdate) {
           _onGameStateUpdate(msg.gameState as GameState, null);
         }

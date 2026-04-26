@@ -1,8 +1,9 @@
 import clsx from 'clsx';
 import { useGameStore } from '@/store/gameStore';
+import { useMultiplayerStore } from '@/store/multiplayer';
 import { HEX_BY_ID, CASTLE_BY_HEX } from '@shared/data/hexes';
 import { HOUSES } from '@shared/data/houses';
-import { canIssueOrder, currentPlayerHouse } from '@shared/engine/orders';
+import { canIssueOrder, currentPlayerHouse, localPlayerHouse } from '@shared/engine/orders';
 import type { HouseId, Unit } from '@shared/types';
 
 function readinessLabel(r: Unit['readiness']) {
@@ -16,6 +17,7 @@ function readinessLabel(r: Unit['readiness']) {
 
 export function HexInfoPanel() {
   const state = useGameStore();
+  const mpHouse = useMultiplayerStore((s) => s.myHouse);
   const { selectedHexId, selectedUnitId, units } = state;
 
   if (selectedHexId == null) {
@@ -28,8 +30,13 @@ export function HexInfoPanel() {
 
   const hex = HEX_BY_ID[selectedHexId];
   if (!hex) return null;
+  // myHouse = the LOCAL user's House (their own units). Different from
+  // currentPlayerHouse, which is whose TURN it is.
+  const myHouse = localPlayerHouse(state, mpHouse);
+  // Whose turn it is — used to gate action buttons (only act on your turn).
+  const turnHouse = currentPlayerHouse(state);
+  const isMyTurn = myHouse === turnHouse;
   const castle = CASTLE_BY_HEX[selectedHexId];
-  const myHouse = currentPlayerHouse(state);
 
   const occupants = Object.values(units).filter((u) => u.hexId === selectedHexId);
   const occupantsByHouse: Record<HouseId, Unit[]> = { Mars: [], Minerva: [], Apollo: [], Diana: [] };
@@ -90,7 +97,7 @@ export function HexInfoPanel() {
                       const r = readinessLabel(u.readiness);
                       const isMine = house === myHouse;
                       const isSelected = u.id === selectedUnitId;
-                      const canSelect = isMine && !u.actedThisTurn && u.readiness !== 'subdued' && u.readiness !== 'weakened';
+                      const canSelect = isMine && isMyTurn && !u.actedThisTurn && u.readiness !== 'subdued' && u.readiness !== 'weakened';
                       return (
                         <li
                           key={u.id}
@@ -117,7 +124,7 @@ export function HexInfoPanel() {
         )}
       </div>
 
-      {selectedUnit && selectedUnit.house === myHouse && (
+      {selectedUnit && selectedUnit.house === myHouse && isMyTurn && (
         <div className="border-t border-stone-700 pt-3 space-y-2">
           <div className="text-sm font-bold">
             Order for {selectedUnit.kind}
@@ -182,8 +189,8 @@ export function HexInfoPanel() {
         </div>
       )}
 
-      {/* Withdraw — visible whenever current player has any non-acted units in this hex */}
-      {(() => {
+      {/* Withdraw — visible only on your own turn for your own non-acted units */}
+      {isMyTurn && (() => {
         const myActiveHere = occupants.filter(
           (u) =>
             u.house === myHouse &&

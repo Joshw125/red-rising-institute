@@ -290,6 +290,18 @@ export function endRound(draft: GameState): void {
   draft.log.push(`— Round ${draft.round} (Act ${draft.act}) —`);
 }
 
+// Whose TURN it currently is in the game. Use this for "is it X's turn?" checks
+// and turn indicators.
 export function currentPlayerHouse(state: GameState): HouseId | null {
   return state.players[state.currentPlayerIdx]?.house ?? null;
+}
+
+// The LOCAL user's House — i.e., which player am I, regardless of whose turn it is.
+// In multiplayer this comes from useMultiplayerStore.myHouse. In local hot-seat
+// mode it falls back to currentPlayerHouse so the same UI works in both modes.
+export function localPlayerHouse(
+  state: GameState,
+  multiplayerHouse: HouseId | null
+): HouseId | null {
+  return multiplayerHouse ?? currentPlayerHouse(state);
 }
