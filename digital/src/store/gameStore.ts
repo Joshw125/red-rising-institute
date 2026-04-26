@@ -76,7 +76,14 @@ export const useGameStore = create<GameStore>()(
     players: [],
     units: {},
     fortifications: [],
-    garrisons: { 8: 3, 18: 3, 32: 2, 38: 4, 65: 3, 70: 3 },
+    // Symmetric deterministic garrisons (no luck of the draw).
+    //   Mercury (38, central anchor): 4
+    //   Jupiter (8, NW mountains):    4  ← hard terrain bonus, far from both
+    //   Pluto (65, Mars-side):        3  ↔ Juno (32, Diana-side):  3   matched pair
+    //   Ceres (18, north):            3  ↔ Neptune (70, south):    3   matched pair
+    // Apollo (75) + Minerva (6) home castles get strength 2 in games where
+    // those houses aren't playing (set dynamically in initDemoGame).
+    garrisons: { 8: 4, 18: 3, 32: 3, 38: 4, 65: 3, 70: 3 },
     selectedHexId: null,
     selectedUnitId: null,
     reserveGroups: {},
@@ -461,7 +468,7 @@ export const useGameStore = create<GameStore>()(
         const homeCastlesByHouse: Record<HouseId, number> = { Mars: 45, Minerva: 6, Apollo: 75, Diana: 52 };
         for (const [h, hex] of Object.entries(homeCastlesByHouse)) {
           if (!playingHouseSet.has(h as HouseId) && s.garrisons[hex] == null) {
-            s.garrisons[hex] = 3; // mid-strength garrison for unmanned home
+            s.garrisons[hex] = 2; // weakest tier for unmanned home castles (matched pair)
           }
         }
         houses.forEach((h) => {

@@ -189,7 +189,8 @@ function buildInitialGameState(houseOrder: HouseId[]): GameState {
     })),
     units: {},
     fortifications: [],
-    garrisons: { 8: 3, 18: 3, 32: 2, 38: 4, 65: 3, 70: 3 },
+    // Symmetric deterministic garrisons (Option A — no luck of the draw).
+    garrisons: { 8: 4, 18: 3, 32: 3, 38: 4, 65: 3, 70: 3 },
     selectedHexId: null,
     selectedUnitId: null,
     reserveGroups: {},
@@ -216,7 +217,7 @@ function buildInitialGameState(houseOrder: HouseId[]): GameState {
   const homeCastlesByHouse: Record<HouseId, number> = { Mars: 45, Minerva: 6, Apollo: 75, Diana: 52 };
   for (const [h, hex] of Object.entries(homeCastlesByHouse)) {
     if (!playingHouseSet.has(h as HouseId) && state.garrisons[hex] == null) {
-      state.garrisons[hex] = 3;
+      state.garrisons[hex] = 2; // weakest tier; matches the symmetric distribution
     }
   }
 
