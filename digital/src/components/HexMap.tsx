@@ -294,7 +294,8 @@ export function HexMap() {
           </g>
         )}
 
-        {/* Interactive hexes */}
+        {/* Interactive hexes — invisible click targets (board art has its own
+            hex outlines baked in; we don't need to draw competing ones). */}
         <g>
           {HEXES.map((h) => {
             const p = positions[h.id];
@@ -305,8 +306,8 @@ export function HexMap() {
                 key={`hex-${h.id}`}
                 points={hexPolygonPoints(p.x, p.y, rr)}
                 fill="transparent"
-                stroke={isSelected ? '#f1c40f' : 'rgba(255,255,255,0.18)'}
-                strokeWidth={isSelected ? 3 : 1}
+                stroke={isSelected ? '#f1c40f' : 'transparent'}
+                strokeWidth={isSelected ? 4 : 0}
                 style={{ cursor: 'pointer' }}
                 onClick={() => handleHexClick(h.id)}
               />
@@ -350,31 +351,28 @@ export function HexMap() {
           })}
         </g>
 
-        {/* Castle ownership markers — small colored dot in the corner of castle
-            hexes to show who controls them. The board art has the castle icons
-            baked in (gray crenellated walls), so we use a small dot to convey
-            ownership without obscuring the art. */}
+        {/* Castle ownership — colored hex outline around castle hexes whose
+            owner is in this game. Subtle, doesn't obscure the baked-in
+            castle icon. Neutral castles get no outline (they're already
+            visually distinct as the only un-marked castles). */}
         <g pointerEvents="none">
           {HEXES.filter((h) => h.special?.kind === 'Castle').map((h) => {
             const p = positions[h.id];
-            const rr = CALIBRATION.r * CALIBRATION.rs[h.r];
+            const rr = CALIBRATION.r * CALIBRATION.rs[h.r] * 0.97;
             const castle = CASTLE_BY_HEX[h.id];
             const playingHouses = new Set(useGameStore.getState().players.map((p) => p.house));
             const isPlayingHome =
               castle?.type === 'home' && castle.house && playingHouses.has(castle.house);
-            const fill = isPlayingHome ? HOUSES[castle!.house!].color : '#a89a73';
+            if (!isPlayingHome) return null;
             return (
-              <g key={`castle-${h.id}`}>
-                {/* Small ownership dot in the upper-right corner of the hex */}
-                <circle
-                  cx={p.x + rr * 0.45}
-                  cy={p.y - rr * 0.45}
-                  r={rr * 0.14}
-                  fill={fill}
-                  stroke="#1a1a1a"
-                  strokeWidth={1.5}
-                />
-              </g>
+              <polygon
+                key={`castle-own-${h.id}`}
+                points={hexPolygonPoints(p.x, p.y, rr)}
+                fill="none"
+                stroke={HOUSES[castle!.house!].color}
+                strokeWidth={4}
+                opacity={0.85}
+              />
             );
           })}
         </g>
@@ -398,9 +396,12 @@ export function HexMap() {
             }
 
             return pips.map((pip, i) => {
+              // Center pips horizontally; stack vertically when multiple states
+              // co-exist in one hex. Sit just below center so we don't collide
+              // with the hex number (upper-left) or the castle icon (true center).
               const slot = i;
-              const cx = p.x + slot * rr * 0.42 - rr * 0.4;
-              const cy = p.y + rr * 0.62;
+              const cx = p.x;
+              const cy = p.y + rr * 0.25 + slot * rr * 0.38;
               const houseColor = HOUSES[pip.house].color;
 
               if (pip.readiness === 'alert') {
